@@ -12,12 +12,9 @@ import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
 import java.util.zip.ZipEntry;
@@ -26,6 +23,225 @@ import javax.imageio.ImageIO;
 import org.bukkit.configuration.file.FileConfiguration;
 
 public final class PackBuildService {
+    private static final String TEXT_SHADER_VERTEX = """
+            #version 330
+            #moj_import <minecraft:fog.glsl>
+            #moj_import <minecraft:dynamictransforms.glsl>
+            #moj_import <minecraft:projection.glsl>
+            #moj_import <_198bbb70afab9c3d.glsl>
+
+            in vec3 Position;
+            in vec4 Color;
+            in vec2 UV0;
+            in ivec2 UV2;
+
+            uniform sampler2D Sampler2;
+
+            out float sphericalVertexDistance;
+            out float cylindricalVertexDistance;
+            out vec4 vertexColor;
+            out vec2 texCoord0;
+
+            void main() {
+                vec3 position = Position;
+                ivec4 color8 = _7a81e42fddee2f93(Color);
+
+                // Marker glyph uses encoded RGB (R/G offset and B yaw channel).
+                if (color8.r != 255 || color8.g != 255 || color8.b != 255) {
+                    vec2 offset = vec2(float(color8.r - 128), float(color8.g - 128)) * 0.50;
+                    position.xy += offset;
+                }
+
+                gl_Position = ProjMat * ModelViewMat * vec4(position, 1.0);
+                sphericalVertexDistance = fog_spherical_distance(position);
+                cylindricalVertexDistance = fog_cylindrical_distance(position);
+                vertexColor = Color * texelFetch(Sampler2, UV2 / 16, 0);
+                texCoord0 = UV0;
+            }
+            """;
+
+    private static final String TEXT_SHADER_FRAGMENT = """
+            #version 330
+            #moj_import <minecraft:fog.glsl>
+            #moj_import <minecraft:dynamictransforms.glsl>
+            #moj_import <minecraft:globals.glsl>
+
+            uniform sampler2D Sampler0;
+
+            in float sphericalVertexDistance;
+            in float cylindricalVertexDistance;
+            in vec4 vertexColor;
+            in vec2 texCoord0;
+
+            out vec4 fragColor;
+
+            void main() {
+                vec4 color = texture(Sampler0, texCoord0) * vertexColor * ColorModulator;
+                if (color.a < 0.001) {
+                    discard;
+                }
+
+                fragColor = apply_fog(
+                    color,
+                    sphericalVertexDistance,
+                    cylindricalVertexDistance,
+                    FogEnvironmentalStart,
+                    FogEnvironmentalEnd,
+                    FogRenderDistanceStart,
+                    FogRenderDistanceEnd,
+                    FogColor
+                );
+            }
+            """;
+
+    private static final String INCLUDE_198 = """
+            ivec4 _7a81e42fddee2f93(vec4 _e30c3475a3a85ac1){
+                return ivec4(round(_e30c3475a3a85ac1 * 255));
+            }
+
+            int _27e4a854910d5a3f(vec4 _e30c3475a3a85ac1){
+                ivec4 _8191e12dd310f85c = _7a81e42fddee2f93(_e30c3475a3a85ac1);
+                return _8191e12dd310f85c.r << 16 | _8191e12dd310f85c.g << 8 | _8191e12dd310f85c.b;
+            }
+
+            vec4 _e72020d0026b8201(ivec4 _e30c3475a3a85ac1){
+                return vec4(_e30c3475a3a85ac1) / 255;
+            }
+            """;
+
+    private static final String LINES_VERTEX = """
+            #version 330
+            #moj_import <minecraft:fog.glsl>
+            #moj_import <minecraft:globals.glsl>
+            #moj_import <minecraft:dynamictransforms.glsl>
+            #moj_import <minecraft:projection.glsl>
+
+            in vec3 Position;
+            in vec4 Color;
+            in vec3 Normal;
+            in float LineWidth;
+
+            out float sphericalVertexDistance;
+            out float cylindricalVertexDistance;
+            out vec4 vertexColor;
+
+            const float VIEW_SHRINK = 1.0 - (1.0 / 256.0);
+            const mat4 VIEW_SCALE = mat4(
+                VIEW_SHRINK, 0.0, 0.0, 0.0,
+                0.0, VIEW_SHRINK, 0.0, 0.0,
+                0.0, 0.0, VIEW_SHRINK, 0.0,
+                0.0, 0.0, 0.0, 1.0
+            );
+
+            void main() {
+                vec4 linePosStart = ProjMat * VIEW_SCALE * ModelViewMat * vec4(Position, 1.0);
+                vec4 linePosEnd = ProjMat * VIEW_SCALE * ModelViewMat * vec4(Position + Normal, 1.0);
+
+                vec3 ndc1 = linePosStart.xyz / linePosStart.w;
+                vec3 ndc2 = linePosEnd.xyz / linePosEnd.w;
+
+                vec2 lineScreenDirection = normalize((ndc2.xy - ndc1.xy) * ScreenSize);
+                vec2 lineOffset = vec2(-lineScreenDirection.y, lineScreenDirection.x) * LineWidth / ScreenSize;
+
+                if (lineOffset.x < 0.0) {
+                    lineOffset *= -1.0;
+                }
+
+                if (gl_VertexID % 2 == 0) {
+                    gl_Position = vec4((ndc1 + vec3(lineOffset, 0.0)) * linePosStart.w, linePosStart.w);
+                } else {
+                    gl_Position = vec4((ndc1 - vec3(lineOffset, 0.0)) * linePosStart.w, linePosStart.w);
+                }
+
+                sphericalVertexDistance = fog_spherical_distance(Position);
+                cylindricalVertexDistance = fog_cylindrical_distance(Position);
+                vertexColor = Color;
+
+                if (Color == vec4(0, 0, 0, .4)) {
+                    vertexColor = vec4(0, 0, 0, 0);
+                    gl_Position = vec4(0);
+                }
+            }
+            """;
+
+    private static final String ITEM_ENTITY_VERTEX = """
+            #version 330
+            #moj_import <minecraft:light.glsl>
+            #moj_import <minecraft:fog.glsl>
+            #moj_import <minecraft:dynamictransforms.glsl>
+            #moj_import <minecraft:projection.glsl>
+            #moj_import <minecraft:globals.glsl>
+
+            in vec3 Position;
+            in vec4 Color;
+            in vec2 UV0;
+            in vec2 UV1;
+            in ivec2 UV2;
+            in vec3 Normal;
+
+            uniform sampler2D Sampler2;
+
+            out float sphericalVertexDistance;
+            out float cylindricalVertexDistance;
+            out vec4 vertexColor;
+            out vec2 texCoord0;
+            out vec2 texCoord1;
+
+            void main() {
+                gl_Position = ProjMat * ModelViewMat * vec4(Position, 1.0);
+                sphericalVertexDistance = fog_spherical_distance(Position);
+                cylindricalVertexDistance = fog_cylindrical_distance(Position);
+                vertexColor = minecraft_mix_light(Light0_Direction, Light1_Direction, Normal, Color) * texelFetch(Sampler2, UV2 / 16, 0);
+                texCoord0 = UV0;
+                texCoord1 = UV1;
+
+                ivec4 marker = ivec4(Color * 255);
+                if (marker == ivec4(0, 0, 2, 255)) {
+                    gl_Position.z = 0;
+                    if (ModelViewMat[3][2] == -11000.0) {
+                        vertexColor = vec4(0);
+                    } else {
+                        vertexColor = vec4(0.0, 0.0, 0.0, 1.0);
+                    }
+                }
+            }
+            """;
+
+    private static final String ITEM_ENTITY_FRAGMENT = """
+            #version 330
+            #moj_import <minecraft:fog.glsl>
+            #moj_import <minecraft:dynamictransforms.glsl>
+            #moj_import <minecraft:globals.glsl>
+
+            uniform sampler2D Sampler0;
+
+            in float sphericalVertexDistance;
+            in float cylindricalVertexDistance;
+            in vec4 vertexColor;
+            in vec2 texCoord0;
+            in vec2 texCoord1;
+
+            out vec4 fragColor;
+
+            void main() {
+                vec4 color = texture(Sampler0, texCoord0) * vertexColor * ColorModulator;
+                if (color.a < 0.1) {
+                    discard;
+                }
+
+                fragColor = apply_fog(
+                    color,
+                    sphericalVertexDistance,
+                    cylindricalVertexDistance,
+                    FogEnvironmentalStart,
+                    FogEnvironmentalEnd,
+                    FogRenderDistanceStart,
+                    FogRenderDistanceEnd,
+                    FogColor
+                );
+            }
+            """;
+
     private final MiniMap plugin;
     private BuildArtifact currentArtifact;
 
@@ -47,66 +263,131 @@ public final class PackBuildService {
             Path dataPath = this.plugin.getDataFolder().toPath();
             Files.createDirectories(dataPath);
 
-            Path workingPath = dataPath.resolve("pack-work");
-            deleteDirectory(workingPath);
-            Files.createDirectories(workingPath);
+            Path contentsPath = dataPath.resolve(config.getString("pack.pipeline.contentsDir", "contents")).normalize();
+            Path outputPath = dataPath.resolve(config.getString("pack.pipeline.outputDir", "output")).normalize();
+            Path stagePath = outputPath.resolve(".staging");
+            Path uncompressedPath = outputPath.resolve("output_uncompressed");
+            Path generatedZipPath = outputPath.resolve(config.getString("pack.pipeline.generatedZipName", "generated.zip")).normalize();
 
-            copyConfiguredFiles(config, workingPath);
-            writePackMcmeta(config, workingPath);
-            writeDefaultFont(config, workingPath);
+            Files.createDirectories(contentsPath);
+            Files.createDirectories(outputPath);
 
-            String outputFile = config.getString("pack.build.outputFile", "minimap-pack.zip");
-            Path outputPath = dataPath.resolve(outputFile).normalize();
-            zipDirectory(workingPath, outputPath);
+            boolean generateDefaults = config.getBoolean("pack.pipeline.generateDefaults", true);
+            boolean overwriteDefaults = config.getBoolean("pack.pipeline.overwriteDefaults", false);
+            if (generateDefaults) {
+                ensureDefaultContents(config, contentsPath, overwriteDefaults);
+            }
 
-            byte[] sha1 = sha1(outputPath);
+            deleteDirectory(stagePath);
+            Files.createDirectories(stagePath);
+
+            writePackMcmeta(config, stagePath);
+            compileContentsToStage(contentsPath, stagePath);
+
+            if (config.getBoolean("pack.pipeline.exportUncompressed", true)) {
+                deleteDirectory(uncompressedPath);
+                copyDirectory(stagePath, uncompressedPath);
+            }
+
+            zipDirectory(stagePath, generatedZipPath);
+
+            byte[] sha1 = sha1(generatedZipPath);
             String shaHex = toHex(sha1);
             UUID packId = UUID.nameUUIDFromBytes(sha1);
 
-            this.currentArtifact = new BuildArtifact(packId, sha1, outputPath, System.currentTimeMillis(), shaHex);
-            this.plugin.getLogger().info("Resource pack rebuilt: " + outputPath + " (sha1=" + shaHex + ")");
+            this.currentArtifact = new BuildArtifact(packId, sha1, generatedZipPath, System.currentTimeMillis(), shaHex);
+            this.plugin.getLogger().info("Resource pack rebuilt: " + generatedZipPath + " (sha1=" + shaHex + ")");
             return this.currentArtifact;
         } catch (Exception exception) {
             throw new IllegalStateException("Failed to build minimap pack", exception);
         }
     }
 
-    private void copyConfiguredFiles(FileConfiguration config, Path workingPath) throws IOException {
-        List<String> entries = config.getStringList("pack.build.files");
-        String sourceRootRaw = config.getString("pack.build.sourceRoot", "..");
+    private void ensureDefaultContents(FileConfiguration config, Path contentsPath, boolean overwrite) throws IOException {
+        String nwGlyph = decodeUnicodeEscapes(config.getString("hud.glyphs.nw", "\\uE101"));
+        String neGlyph = decodeUnicodeEscapes(config.getString("hud.glyphs.ne", "\\uE102"));
+        String swGlyph = decodeUnicodeEscapes(config.getString("hud.glyphs.sw", "\\uE103"));
+        String seGlyph = decodeUnicodeEscapes(config.getString("hud.glyphs.se", "\\uE104"));
+        String borderGlyph = decodeUnicodeEscapes(config.getString("hud.glyphs.border", "\\uE105"));
+        String markerGlyph = decodeUnicodeEscapes(config.getString("hud.glyphs.marker", "\\uE106"));
 
-        if (entries.isEmpty()) {
-            this.plugin.getLogger().warning("pack.build.files is empty. Only generated pack files will be included.");
+        writeTextFileIfNeeded(contentsPath.resolve("minecraft/shaders/core/rendertype_text.vsh"), TEXT_SHADER_VERTEX, overwrite);
+        writeTextFileIfNeeded(contentsPath.resolve("minecraft/shaders/core/rendertype_text.fsh"), TEXT_SHADER_FRAGMENT, overwrite);
+        writeTextFileIfNeeded(contentsPath.resolve("minecraft/shaders/core/rendertype_lines.vsh"), LINES_VERTEX, overwrite);
+        writeTextFileIfNeeded(contentsPath.resolve("minecraft/shaders/core/rendertype_item_entity_translucent_cull.vsh"), ITEM_ENTITY_VERTEX, overwrite);
+        writeTextFileIfNeeded(contentsPath.resolve("minecraft/shaders/core/rendertype_item_entity_translucent_cull.fsh"), ITEM_ENTITY_FRAGMENT, overwrite);
+        writeTextFileIfNeeded(contentsPath.resolve("minecraft/shaders/include/_198bbb70afab9c3d.glsl"), INCLUDE_198, overwrite);
+
+        String providers = "{\n"
+                + "  \"providers\": [\n"
+                + "    " + bitmapProvider("minecraft:font/minimap/nw.png", 128, 128, nwGlyph) + ",\n"
+                + "    " + bitmapProvider("minecraft:font/minimap/ne.png", 128, 128, neGlyph) + ",\n"
+                + "    " + bitmapProvider("minecraft:font/minimap/sw.png", 128, 128, swGlyph) + ",\n"
+                + "    " + bitmapProvider("minecraft:font/minimap/se.png", 128, 128, seGlyph) + ",\n"
+                + "    " + bitmapProvider("minecraft:font/minimap/border.png", 128, 128, borderGlyph) + ",\n"
+                + "    " + bitmapProvider("minecraft:font/minimap/marker.png", 32, 24, markerGlyph) + "\n"
+                + "  ]\n"
+                + "}\n";
+        writeTextFileIfNeeded(contentsPath.resolve("minecraft/font/default.json"), providers, overwrite);
+
+        writeTextureIfNeeded(contentsPath.resolve("minecraft/textures/font/minimap/nw.png"), 128, new Color(52, 107, 164, 255), PlaceholderMode.FILL, overwrite);
+        writeTextureIfNeeded(contentsPath.resolve("minecraft/textures/font/minimap/ne.png"), 128, new Color(71, 128, 181, 255), PlaceholderMode.FILL, overwrite);
+        writeTextureIfNeeded(contentsPath.resolve("minecraft/textures/font/minimap/sw.png"), 128, new Color(63, 116, 170, 255), PlaceholderMode.FILL, overwrite);
+        writeTextureIfNeeded(contentsPath.resolve("minecraft/textures/font/minimap/se.png"), 128, new Color(88, 141, 196, 255), PlaceholderMode.FILL, overwrite);
+        writeTextureIfNeeded(contentsPath.resolve("minecraft/textures/font/minimap/border.png"), 128, new Color(235, 235, 235, 255), PlaceholderMode.BORDER, overwrite);
+        writeTextureIfNeeded(contentsPath.resolve("minecraft/textures/font/minimap/marker.png"), 32, new Color(255, 44, 44, 255), PlaceholderMode.MARKER, overwrite);
+    }
+
+    private void compileContentsToStage(Path contentsPath, Path stagePath) throws IOException {
+        if (!Files.exists(contentsPath)) {
             return;
         }
 
-        for (String entry : entries) {
-            CopyEntry copyEntry = parseCopyEntry(entry);
-            if (copyEntry == null) {
-                this.plugin.getLogger().warning("Invalid pack.build entry: " + entry);
-                continue;
-            }
+        try (var stream = Files.walk(contentsPath)) {
+            stream.filter(Files::isRegularFile).forEach(sourceFile -> {
+                try {
+                    Path relative = contentsPath.relativize(sourceFile);
+                    if (relative.getNameCount() == 0) {
+                        return;
+                    }
 
-            Path sourcePath = resolveSourcePath(copyEntry.source(), sourceRootRaw);
-            if (sourcePath == null || !Files.exists(sourcePath)) {
-                this.plugin.getLogger().warning("Source file not found: " + copyEntry.source());
-                continue;
-            }
+                    Path targetPath;
+                    if ("assets".equals(relative.getName(0).toString())) {
+                        targetPath = stagePath.resolve(relative);
+                    } else {
+                        String namespace = relative.getName(0).toString();
+                        Path rest = relative.getNameCount() > 1
+                                ? relative.subpath(1, relative.getNameCount())
+                                : Path.of(relative.getFileName().toString());
+                        targetPath = stagePath.resolve("assets").resolve(namespace).resolve(rest);
+                    }
 
-            Path targetPath = normalizeTargetPath(workingPath, copyEntry.target());
-            if (targetPath == null) {
-                this.plugin.getLogger().warning("Rejected unsafe target path: " + copyEntry.target());
-                continue;
-            }
+                    targetPath = targetPath.normalize();
+                    if (!targetPath.startsWith(stagePath)) {
+                        throw new IllegalStateException("Unsafe target path from contents: " + relative);
+                    }
 
-            Files.createDirectories(targetPath.getParent());
-            Files.copy(sourcePath, targetPath, StandardCopyOption.REPLACE_EXISTING);
+                    Files.createDirectories(targetPath.getParent());
+                    Files.copy(sourceFile, targetPath);
+                } catch (IOException exception) {
+                    throw new IllegalStateException("Failed to compile file from contents", exception);
+                }
+            });
         }
     }
 
-    private void writePackMcmeta(FileConfiguration config, Path workingPath) throws IOException {
-        int packFormat = config.getInt("pack.build.packFormat", 75);
-        String description = escapeJson(config.getString("pack.build.description", "MiniMap PoC Pack"));
+    private void writeTextFileIfNeeded(Path filePath, String content, boolean overwrite) throws IOException {
+        if (Files.exists(filePath) && !overwrite) {
+            return;
+        }
+
+        Files.createDirectories(filePath.getParent());
+        Files.writeString(filePath, content, StandardCharsets.UTF_8);
+    }
+
+    private void writePackMcmeta(FileConfiguration config, Path stagePath) throws IOException {
+        int packFormat = config.getInt("pack.pipeline.packFormat", 75);
+        String description = escapeJson(config.getString("pack.pipeline.description", "MiniMap PoC Pack"));
 
         String json = "{\n"
                 + "  \"pack\": {\n"
@@ -115,49 +396,8 @@ public final class PackBuildService {
                 + "  }\n"
                 + "}\n";
 
-        Path mcmetaPath = workingPath.resolve("pack.mcmeta");
+        Path mcmetaPath = stagePath.resolve("pack.mcmeta");
         Files.writeString(mcmetaPath, json, StandardCharsets.UTF_8);
-    }
-
-    private void writeDefaultFont(FileConfiguration config, Path workingPath) throws IOException {
-        Path fontPath = workingPath.resolve("assets/minecraft/font/default.json");
-        Files.createDirectories(fontPath.getParent());
-
-        String nwGlyph = decodeUnicodeEscapes(config.getString("hud.glyphs.nw", "\\uE101"));
-        String neGlyph = decodeUnicodeEscapes(config.getString("hud.glyphs.ne", "\\uE102"));
-        String swGlyph = decodeUnicodeEscapes(config.getString("hud.glyphs.sw", "\\uE103"));
-        String seGlyph = decodeUnicodeEscapes(config.getString("hud.glyphs.se", "\\uE104"));
-        String borderGlyph = decodeUnicodeEscapes(config.getString("hud.glyphs.border", "\\uE105"));
-        String markerGlyph = decodeUnicodeEscapes(config.getString("hud.glyphs.marker", "\\uE106"));
-
-        ensureTextureExists(workingPath.resolve("assets/minecraft/textures/font/minimap/nw.png"), 128, new Color(60, 100, 180, 255), PlaceholderMode.FILL);
-        ensureTextureExists(workingPath.resolve("assets/minecraft/textures/font/minimap/ne.png"), 128, new Color(90, 140, 200, 255), PlaceholderMode.FILL);
-        ensureTextureExists(workingPath.resolve("assets/minecraft/textures/font/minimap/sw.png"), 128, new Color(80, 120, 160, 255), PlaceholderMode.FILL);
-        ensureTextureExists(workingPath.resolve("assets/minecraft/textures/font/minimap/se.png"), 128, new Color(110, 150, 210, 255), PlaceholderMode.FILL);
-        ensureTextureExists(workingPath.resolve("assets/minecraft/textures/font/minimap/border.png"), 128, new Color(220, 220, 220, 255), PlaceholderMode.BORDER);
-        ensureTextureExists(workingPath.resolve("assets/minecraft/textures/font/minimap/marker.png"), 16, new Color(255, 30, 30, 255), PlaceholderMode.MARKER);
-
-        List<String> providers = new ArrayList<>();
-        providers.add(bitmapProvider("minecraft:font/minimap/nw.png", 128, 128, nwGlyph));
-        providers.add(bitmapProvider("minecraft:font/minimap/ne.png", 128, 128, neGlyph));
-        providers.add(bitmapProvider("minecraft:font/minimap/sw.png", 128, 128, swGlyph));
-        providers.add(bitmapProvider("minecraft:font/minimap/se.png", 128, 128, seGlyph));
-        providers.add(bitmapProvider("minecraft:font/minimap/border.png", 128, 128, borderGlyph));
-        providers.add(bitmapProvider("minecraft:font/minimap/marker.png", 16, 16, markerGlyph));
-
-        StringBuilder json = new StringBuilder();
-        json.append("{\n  \"providers\": [\n");
-
-        for (int i = 0; i < providers.size(); i++) {
-            json.append("    ").append(providers.get(i));
-            if (i + 1 < providers.size()) {
-                json.append(',');
-            }
-            json.append('\n');
-        }
-
-        json.append("  ]\n}\n");
-        Files.writeString(fontPath, json, StandardCharsets.UTF_8);
     }
 
     private String bitmapProvider(String filePath, int height, int ascent, String glyph) {
@@ -165,12 +405,13 @@ public final class PackBuildService {
                 + ",\"chars\":[\"" + escapeGlyph(glyph) + "\"]}";
     }
 
-    private void ensureTextureExists(Path targetPath, int size, Color color, PlaceholderMode mode) throws IOException {
-        if (Files.exists(targetPath)) {
+    private void writeTextureIfNeeded(Path targetPath, int size, Color color, PlaceholderMode mode, boolean overwrite) throws IOException {
+        if (Files.exists(targetPath) && !overwrite) {
             return;
         }
 
         Files.createDirectories(targetPath.getParent());
+
         BufferedImage image = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
         Graphics2D graphics = image.createGraphics();
         graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
@@ -178,6 +419,13 @@ public final class PackBuildService {
         if (mode == PlaceholderMode.FILL) {
             graphics.setColor(color);
             graphics.fillRect(0, 0, size, size);
+            graphics.setColor(new Color(255, 255, 255, 24));
+            for (int x = 0; x < size; x += 16) {
+                graphics.drawLine(x, 0, x, size);
+            }
+            for (int y = 0; y < size; y += 16) {
+                graphics.drawLine(0, y, size, y);
+            }
         } else if (mode == PlaceholderMode.BORDER) {
             graphics.setColor(new Color(0, 0, 0, 0));
             graphics.fillRect(0, 0, size, size);
@@ -190,12 +438,33 @@ public final class PackBuildService {
             graphics.setColor(color);
             int center = size / 2;
             int[] xPoints = {center, center - (size / 4), center + (size / 4)};
-            int[] yPoints = {size / 6, size - (size / 5), size - (size / 5)};
+            int[] yPoints = {size / 8, size - (size / 5), size - (size / 5)};
             graphics.fillPolygon(xPoints, yPoints, 3);
         }
 
         graphics.dispose();
         ImageIO.write(image, "png", targetPath.toFile());
+    }
+
+    private static void copyDirectory(Path source, Path target) throws IOException {
+        Files.createDirectories(target);
+
+        try (var stream = Files.walk(source)) {
+            stream.forEach(sourcePath -> {
+                try {
+                    Path relative = source.relativize(sourcePath);
+                    Path targetPath = target.resolve(relative);
+                    if (Files.isDirectory(sourcePath)) {
+                        Files.createDirectories(targetPath);
+                    } else {
+                        Files.createDirectories(targetPath.getParent());
+                        Files.copy(sourcePath, targetPath);
+                    }
+                } catch (IOException exception) {
+                    throw new IllegalStateException("Failed to copy directory", exception);
+                }
+            });
+        }
     }
 
     private static void zipDirectory(Path sourceDir, Path zipPath) throws IOException {
@@ -263,36 +532,6 @@ public final class PackBuildService {
         }
     }
 
-    private Path resolveSourcePath(String source, String sourceRootRaw) {
-        List<Path> candidates = new ArrayList<>();
-        Path dataPath = this.plugin.getDataFolder().toPath();
-        Path cwdPath = Path.of("").toAbsolutePath();
-
-        Path direct = Path.of(source);
-        candidates.add(direct);
-
-        Path sourceRoot = Path.of(sourceRootRaw);
-        candidates.add(sourceRoot.resolve(source));
-
-        candidates.add(dataPath.resolve(source));
-        if (dataPath.getParent() != null) {
-            candidates.add(dataPath.getParent().resolve(source));
-            candidates.add(dataPath.getParent().resolve(sourceRootRaw).resolve(source));
-        }
-
-        candidates.add(cwdPath.resolve(source));
-        candidates.add(cwdPath.resolve(sourceRootRaw).resolve(source));
-
-        for (Path candidate : candidates) {
-            Path normalized = candidate.normalize();
-            if (Files.exists(normalized)) {
-                return normalized;
-            }
-        }
-
-        return null;
-    }
-
     private static String escapeJson(String value) {
         return value
                 .replace("\\", "\\\\")
@@ -337,32 +576,6 @@ public final class PackBuildService {
         }
 
         return output.toString();
-    }
-
-    private static Path normalizeTargetPath(Path root, String target) {
-        Path path = root.resolve(target).normalize();
-        if (!path.startsWith(root)) {
-            return null;
-        }
-        return path;
-    }
-
-    private static CopyEntry parseCopyEntry(String entry) {
-        int split = entry.indexOf('|');
-        if (split <= 0 || split + 1 >= entry.length()) {
-            return null;
-        }
-
-        String source = entry.substring(0, split).trim();
-        String target = entry.substring(split + 1).trim();
-        if (source.isEmpty() || target.isEmpty()) {
-            return null;
-        }
-
-        return new CopyEntry(source, target);
-    }
-
-    private record CopyEntry(String source, String target) {
     }
 
     private enum PlaceholderMode {
