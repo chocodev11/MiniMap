@@ -1,0 +1,56 @@
+pack:
+  host:
+    bind: "0.0.0.0"
+    port: 8085
+    publicBaseUrl: ""
+    path: "minimap-pack.zip"
+    force: true
+    prompt: "MiniMap PoC resource pack"
+
+  build:
+    outputFile: "minimap-pack.zip"
+    sourceRoot: ".."
+    packFormat: 75
+    description: "MiniMap PoC Pack"
+    files:
+      - "shaders/core/rendertype_text.vsh|assets/minecraft/shaders/core/rendertype_text.vsh"
+      - "shaders/core/rendertype_text.fsh|assets/minecraft/shaders/core/rendertype_text.fsh"
+      - "shaders/core/rendertype_lines.vsh|assets/minecraft/shaders/core/rendertype_lines.vsh"
+      - "shaders/core/rendertype_item_entity_translucent_cull.vsh|assets/minecraft/shaders/core/rendertype_item_entity_translucent_cull.vsh"
+      - "shaders/core/rendertype_item_entity_translucent_cull.fsh|assets/minecraft/shaders/core/rendertype_item_entity_translucent_cull.fsh"
+      - "shaders/include/_198bbb70afab9c3d.glsl|assets/minecraft/shaders/include/_198bbb70afab9c3d.glsl"
+      - "shaders/include/_1eada2ffe7727243.glsl|assets/minecraft/shaders/include/_1eada2ffe7727243.glsl"
+      - "shaders/include/_3302a30506473f51.glsl|assets/minecraft/shaders/include/_3302a30506473f51.glsl"
+      - "shaders/include/_3b7ff32aefe7c0d6.glsl|assets/minecraft/shaders/include/_3b7ff32aefe7c0d6.glsl"
+      - "shaders/include/_4e4365126d33336f.glsl|assets/minecraft/shaders/include/_4e4365126d33336f.glsl"
+      - "shaders/include/_4f7149e45bc2e4e6.glsl|assets/minecraft/shaders/include/_4f7149e45bc2e4e6.glsl"
+      - "shaders/include/_7af9c0a7c05c2135.glsl|assets/minecraft/shaders/include/_7af9c0a7c05c2135.glsl"
+      - "shaders/include/_9c2d475f054c911e.glsl|assets/minecraft/shaders/include/_9c2d475f054c911e.glsl"
+      - "shaders/include/_a19b0c8282bc0684.glsl|assets/minecraft/shaders/include/_a19b0c8282bc0684.glsl"
+      - "shaders/include/_a23cae4394afab3f.glsl|assets/minecraft/shaders/include/_a23cae4394afab3f.glsl"
+      - "shaders/include/_bb2d0848bf1aeab6.glsl|assets/minecraft/shaders/include/_bb2d0848bf1aeab6.glsl"
+      - "shaders/include/_f6e18145df74ef16.glsl|assets/minecraft/shaders/include/_f6e18145df74ef16.glsl"
+      - "textures/00e5fbdff142c479.png|assets/minecraft/textures/font/minimap/nw.png"
+      - "textures/008d455a59840e5c.png|assets/minecraft/textures/font/minimap/ne.png"
+      - "textures/010299927d2d9a41.png|assets/minecraft/textures/font/minimap/sw.png"
+      - "textures/0149fb784117d2ce.png|assets/minecraft/textures/font/minimap/se.png"
+      - "textures/0177d959ecf6b52f.png|assets/minecraft/textures/font/minimap/border.png"
+      - "textures/017b5412f384ab77.png|assets/minecraft/textures/font/minimap/marker.png"
+
+hud:
+  updateIntervalTicks: 2
+  layout: "{nw}{ne}{sw}{se}{border}{marker}"
+
+  map:
+    centerX: 0.0
+    centerZ: 0.0
+    radiusBlocks: 256.0
+    leftOrRight: "left"
+
+  glyphs:
+    nw: "\\uE101"
+    ne: "\\uE102"
+    sw: "\\uE103"
+    se: "\\uE104"
+    border: "\\uE105"
+    marker: "\\uE106"

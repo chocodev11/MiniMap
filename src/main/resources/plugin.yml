@@ -1,0 +1,18 @@
+main: epicc.dev.MiniMap
+version: 0.0.1
+name: MiniMap
+author: Dumbass
+api-version: '1.21'
+
+commands:
+  minimap:
+    description: MiniMap PoC management command
+    usage: /minimap <reload|pack|hud>
+
+permissions:
+  minimap.admin:
+    description: Allow administrative minimap commands
+    default: op
+  minimap.hud:
+    description: Allow player minimap HUD usage
+    default: true
