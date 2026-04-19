@@ -27,7 +27,7 @@ hud:
     radiusBlocks: 256.0
     leftOrRight: "left"
     pan:
-      invert: true
+      invert: false
     rotation:
       invertYaw: false
       offsetDegrees: 180.0
