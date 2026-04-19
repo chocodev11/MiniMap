@@ -38,7 +38,15 @@ public final class PackDeliveryService {
             return;
         }
 
+        UUID playerId = player.getUniqueId();
         PackBuildService.BuildArtifact artifact = this.packBuildService.getCurrentArtifact();
+        UUID packId = artifact.id();
+        UUID lastRequestedPackId = this.sessionService.getLastRequestedPackId(playerId);
+        if (packId.equals(lastRequestedPackId)
+                && (this.sessionService.isPackLoaded(playerId) || this.sessionService.isPackRequestPending(playerId))) {
+            return;
+        }
+
         String url = this.packHttpService.getPackUrl();
 
         FileConfiguration config = this.plugin.getConfig();
@@ -48,8 +56,9 @@ public final class PackDeliveryService {
             prompt = null;
         }
 
-        UUID packId = artifact.id();
-        this.sessionService.setPackLoaded(player.getUniqueId(), false);
+        this.sessionService.setPackLoaded(playerId, false);
+        this.sessionService.setPackRequestPending(playerId, true);
+        this.sessionService.setLastRequestedPackId(playerId, packId);
         this.hudService.hideHud(player);
 
         player.addResourcePack(packId, url, artifact.sha1(), prompt, force);
@@ -63,11 +72,13 @@ public final class PackDeliveryService {
         switch (event.getStatus()) {
             case SUCCESSFULLY_LOADED -> {
                 this.sessionService.setPackLoaded(playerId, true);
+                this.sessionService.setPackRequestPending(playerId, false);
                 this.hudService.showHud(player);
                 this.plugin.getLogger().info("Resource pack loaded for " + player.getName());
             }
             case DECLINED, DISCARDED, FAILED_DOWNLOAD, FAILED_RELOAD, INVALID_URL -> {
                 this.sessionService.setPackLoaded(playerId, false);
+                this.sessionService.setPackRequestPending(playerId, false);
                 this.hudService.hideHud(player);
 
                 if (event.getStatus() == PlayerResourcePackStatusEvent.Status.FAILED_RELOAD) {
@@ -76,7 +87,10 @@ public final class PackDeliveryService {
                     this.plugin.getLogger().warning("Resource pack status for " + player.getName() + ": " + event.getStatus());
                 }
             }
-            case ACCEPTED, DOWNLOADED -> this.plugin.getLogger().info("Resource pack status for " + player.getName() + ": " + event.getStatus());
+            case ACCEPTED, DOWNLOADED -> {
+                this.sessionService.setPackRequestPending(playerId, true);
+                this.plugin.getLogger().info("Resource pack status for " + player.getName() + ": " + event.getStatus());
+            }
         }
     }
 }

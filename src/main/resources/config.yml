@@ -26,8 +26,10 @@ hud:
     centerZ: 0.0
     radiusBlocks: 256.0
     leftOrRight: "left"
+    pan:
+      invert: true
     rotation:
-      invertYaw: true
+      invertYaw: false
       offsetDegrees: 180.0
 
   glyphs:

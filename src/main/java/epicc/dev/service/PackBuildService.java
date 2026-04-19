@@ -53,7 +53,7 @@ public final class PackBuildService {
                 int t = c.r >> 5;
                 return
                     t >= 1 && t <= 6 &&
-                    (c.g & 0xC0) == 0x80 &&
+                    (c.g & 0x80) == 0x80 &&
                     (c.b & 0x40) == 0x40;
             }
 
@@ -80,7 +80,9 @@ public final class PackBuildService {
 
                 ivec4 proto = minimapGlyph ? color8 : colorTimes4;
                 int typeId = proto.r >> 5;
-                int payloadYaw = proto.r & 31;
+                int payloadYawLow5 = proto.r & 31;
+                int payloadYawHigh = (proto.g >> 6) & 1;
+                int payloadYaw = payloadYawLow5 | (payloadYawHigh << 5);
                 int payloadPanX = proto.g & 63;
                 int payloadPanY = proto.b & 63;
                 bool sideRight = (proto.b & 0x80) == 0x80;
@@ -99,9 +101,11 @@ public final class PackBuildService {
                     float borderSize = 128.0;
                     float markerSize = 22.0;
                     float clipRadius = 62.0;
-                    float yawAngle = (float(payloadYaw) / 31.0) * 6.28318530718;
-                    vec2 panVec = vec2(float(payloadPanX), float(payloadPanY));
-                    panVec = (panVec - vec2(31.5)) * 2.0;
+                    float yawAngle = (float(payloadYaw) / 63.0) * 6.28318530718;
+                    vec2 panVec = vec2(
+                        (float(payloadPanX) - 31.5) * 2.0,
+                        (float(payloadPanY) - 31.5) * 2.0
+                    );
 
                     vec2 corner = corner_from_id(gl_VertexID % 4);
                     vec2 local = (corner - vec2(0.5)) * tileSize;

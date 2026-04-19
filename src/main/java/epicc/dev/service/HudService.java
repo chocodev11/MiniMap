@@ -36,16 +36,28 @@ public final class HudService {
             bar.addPlayer(player);
         }
 
-        bar.setVisible(true);
-        bar.setProgress(1.0D);
-        bar.setTitle(buildHudTitle(player));
+        if (!bar.isVisible()) {
+            bar.setVisible(true);
+        }
+        if (bar.getProgress() != 1.0D) {
+            bar.setProgress(1.0D);
+        }
+
+        String title = buildHudTitle(player);
+        String lastTitle = this.sessionService.getLastHudTitle(playerId);
+        if (!title.equals(lastTitle)) {
+            bar.setTitle(title);
+            this.sessionService.setLastHudTitle(playerId, title);
+        }
     }
 
     public void hideHud(Player player) {
-        BossBar bar = this.bars.get(player.getUniqueId());
+        UUID playerId = player.getUniqueId();
+        BossBar bar = this.bars.get(playerId);
         if (bar != null) {
             bar.removePlayer(player);
         }
+        this.sessionService.clearLastHudTitle(playerId);
     }
 
     public void removeHud(Player player) {
@@ -54,6 +66,7 @@ public final class HudService {
         if (bar != null) {
             bar.removeAll();
         }
+        this.sessionService.clearLastHudTitle(playerId);
     }
 
     public void updateHud(Player player) {
@@ -72,9 +85,19 @@ public final class HudService {
             bar.addPlayer(player);
         }
 
-        bar.setVisible(true);
-        bar.setProgress(1.0D);
-        bar.setTitle(buildHudTitle(player));
+        if (!bar.isVisible()) {
+            bar.setVisible(true);
+        }
+        if (bar.getProgress() != 1.0D) {
+            bar.setProgress(1.0D);
+        }
+
+        String title = buildHudTitle(player);
+        String lastTitle = this.sessionService.getLastHudTitle(playerId);
+        if (!title.equals(lastTitle)) {
+            bar.setTitle(title);
+            this.sessionService.setLastHudTitle(playerId, title);
+        }
     }
 
     public void shutdown() {
@@ -103,23 +126,27 @@ public final class HudService {
 
         double normalizedX = clamp((centerX - location.getX()) / radius, -1.0D, 1.0D);
         double normalizedZ = clamp((centerZ - location.getZ()) / radius, -1.0D, 1.0D);
+        if (config.getBoolean("hud.map.pan.invert", true)) {
+            normalizedX = -normalizedX;
+            normalizedZ = -normalizedZ;
+        }
 
-        boolean invertYaw = config.getBoolean("hud.map.rotation.invertYaw", true);
+        boolean invertYaw = config.getBoolean("hud.map.rotation.invertYaw", false);
         double yawOffsetDegrees = config.getDouble("hud.map.rotation.offsetDegrees", 180.0D);
         double playerYawDegrees = normalizeUnsignedDegrees(location.getYaw());
         double mapRotationDegrees = normalizeUnsignedDegrees((invertYaw ? -playerYawDegrees : playerYawDegrees) + yawOffsetDegrees);
 
-        int yaw5 = encodeUnsigned5FromDegrees(mapRotationDegrees);
+        int yaw6 = encodeUnsigned6FromDegrees(mapRotationDegrees);
         int markerX6 = encodeUnsigned6FromSigned(normalizedX);
         int markerY6 = encodeUnsigned6FromSigned(normalizedZ);
         int sideBit = "right".equalsIgnoreCase(config.getString("hud.map.leftOrRight", "left")) ? 1 : 0;
 
-        String nwColor = minimapColor(1, yaw5, markerX6, markerY6, sideBit == 1);
-        String neColor = minimapColor(2, yaw5, markerX6, markerY6, sideBit == 1);
-        String swColor = minimapColor(3, yaw5, markerX6, markerY6, sideBit == 1);
-        String seColor = minimapColor(4, yaw5, markerX6, markerY6, sideBit == 1);
-        String borderColor = minimapColor(5, yaw5, 0, 0, sideBit == 1);
-        String markerColor = minimapColor(6, yaw5, markerX6, markerY6, sideBit == 1);
+        String nwColor = minimapColor(1, yaw6, markerX6, markerY6, sideBit == 1);
+        String neColor = minimapColor(2, yaw6, markerX6, markerY6, sideBit == 1);
+        String swColor = minimapColor(3, yaw6, markerX6, markerY6, sideBit == 1);
+        String seColor = minimapColor(4, yaw6, markerX6, markerY6, sideBit == 1);
+        String borderColor = minimapColor(5, yaw6, 0, 0, sideBit == 1);
+        String markerColor = minimapColor(6, yaw6, markerX6, markerY6, sideBit == 1);
 
         String leftOrRight = sideBit == 1 ? "right" : "left";
 
@@ -139,9 +166,9 @@ public final class HudService {
         return (int) clamp(payload, 0, 63);
     }
 
-    private static int encodeUnsigned5FromDegrees(double degrees) {
-        int payload = (int) Math.round((normalizeUnsignedDegrees(degrees) / 360.0D) * 31.0D);
-        return (int) clamp(payload, 0, 31);
+    private static int encodeUnsigned6FromDegrees(double degrees) {
+        int payload = (int) Math.round((normalizeUnsignedDegrees(degrees) / 360.0D) * 63.0D);
+        return (int) clamp(payload, 0, 63);
     }
 
     private static double normalizeUnsignedDegrees(double degrees) {
@@ -152,10 +179,13 @@ public final class HudService {
         return normalized;
     }
 
-    private static String minimapColor(int type, int yaw5, int panX6, int panY6, boolean sideRight) {
-        int red = ((type & 0x07) << 5) | (yaw5 & 0x1F);
-        int green = 0x80 | (panX6 & 0x3F);
-        int blue = (sideRight ? 0xC0 : 0x40) | (panY6 & 0x3F);
+    private static String minimapColor(int type, int yaw6, int panX6, int panY6, boolean sideRight) {
+        int yawLow5 = yaw6 & 0x1F;
+        int yawHigh1 = (yaw6 >> 5) & 0x01;
+
+        int red = ((type & 0x07) << 5) | yawLow5;
+        int green = 0x80 | (yawHigh1 << 6) | (panX6 & 0x3F);
+        int blue = (sideRight ? 0x80 : 0x00) | 0x40 | (panY6 & 0x3F);
         return hexColor(red, green, blue);
     }
 
