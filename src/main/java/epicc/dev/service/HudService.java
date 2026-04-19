@@ -102,9 +102,9 @@ public final class HudService {
         double normalizedX = clamp((location.getX() - centerX) / radius, -1.0D, 1.0D);
         double normalizedZ = clamp((location.getZ() - centerZ) / radius, -1.0D, 1.0D);
 
-        int red = encodeSignedNormalized(normalizedX);
-        int green = encodeSignedNormalized(normalizedZ);
-        int blue = encodeYaw(location.getYaw());
+        int red = encodeMarkerSigned6(normalizedX, 0x40);
+        int green = encodeMarkerSigned6(normalizedZ, 0x80);
+        int blue = encodeMarkerYaw6(location.getYaw());
 
         String white = hexColor(255, 255, 255);
         String markerColor = hexColor(red, green, blue);
@@ -122,19 +122,21 @@ public final class HudService {
                 + LEGACY_PREFIX + "r";
     }
 
-    private static int encodeSignedNormalized(double value) {
-        int encoded = (int) Math.round((value * 127.0D) + 128.0D);
-        return (int) clamp(encoded, 0, 255);
+    private static int encodeMarkerSigned6(double value, int signature) {
+        int payload = (int) Math.round((value + 1.0D) * 31.5D);
+        payload = (int) clamp(payload, 0, 63);
+        return signature | payload;
     }
 
-    private static int encodeYaw(float yawDegrees) {
+    private static int encodeMarkerYaw6(float yawDegrees) {
         double wrappedYaw = yawDegrees % 360.0D;
         if (wrappedYaw < 0.0D) {
             wrappedYaw += 360.0D;
         }
 
-        int encoded = (int) Math.round((wrappedYaw / 360.0D) * 255.0D);
-        return (int) clamp(encoded, 0, 255);
+        int payload = (int) Math.round((wrappedYaw / 360.0D) * 63.0D);
+        payload = (int) clamp(payload, 0, 63);
+        return 0xC0 | payload;
     }
 
     private static String hexColor(int red, int green, int blue) {

@@ -46,9 +46,19 @@ public final class PackBuildService {
                 vec3 position = Position;
                 ivec4 color8 = _7a81e42fddee2f93(Color);
 
-                // Marker glyph uses encoded RGB (R/G offset and B yaw channel).
-                if (color8.r != 255 || color8.g != 255 || color8.b != 255) {
-                    vec2 offset = vec2(float(color8.r - 128), float(color8.g - 128)) * 0.50;
+                // Marker glyph uses signed 6-bit payload with channel signatures:
+                // R: 01xxxxxx, G: 10xxxxxx, B: 11xxxxxx
+                // This avoids shifting normal text/shadow vertices.
+                bool minimapMarker =
+                    (color8.r & 0xC0) == 0x40 &&
+                    (color8.g & 0xC0) == 0x80 &&
+                    (color8.b & 0xC0) == 0xC0;
+
+                if (minimapMarker) {
+                    int sx = color8.r & 0x3F;
+                    int sy = color8.g & 0x3F;
+                    vec2 offset = vec2(float(sx), float(sy));
+                    offset = (offset - vec2(31.5)) * 2.0;
                     position.xy += offset;
                 }
 
