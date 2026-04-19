@@ -30,7 +30,8 @@ public final class HudService {
             return;
         }
 
-        BossBar bar = this.bars.computeIfAbsent(playerId, ignored -> Bukkit.createBossBar("", BarColor.WHITE, BarStyle.SOLID));
+        BossBar bar = this.bars.computeIfAbsent(playerId,
+                ignored -> Bukkit.createBossBar("", BarColor.WHITE, BarStyle.SOLID));
         if (!bar.getPlayers().contains(player)) {
             bar.addPlayer(player);
         }
@@ -65,7 +66,8 @@ public final class HudService {
             return;
         }
 
-        BossBar bar = this.bars.computeIfAbsent(playerId, ignored -> Bukkit.createBossBar("", BarColor.WHITE, BarStyle.SOLID));
+        BossBar bar = this.bars.computeIfAbsent(playerId,
+                ignored -> Bukkit.createBossBar("", BarColor.WHITE, BarStyle.SOLID));
         if (!bar.getPlayers().contains(player)) {
             bar.addPlayer(player);
         }
@@ -99,8 +101,8 @@ public final class HudService {
         double centerZ = config.getDouble("hud.map.centerZ", 0.0D);
         double radius = Math.max(1.0D, config.getDouble("hud.map.radiusBlocks", 256.0D));
 
-        double normalizedX = clamp((location.getX() - centerX) / radius, -1.0D, 1.0D);
-        double normalizedZ = clamp((location.getZ() - centerZ) / radius, -1.0D, 1.0D);
+        double normalizedX = clamp((centerX - location.getX()) / radius, -1.0D, 1.0D);
+        double normalizedZ = clamp((centerZ - location.getZ()) / radius, -1.0D, 1.0D);
         int yaw5 = encodeUnsigned5FromYaw(location.getYaw());
         int markerX6 = encodeUnsigned6FromSigned(normalizedX);
         int markerY6 = encodeUnsigned6FromSigned(normalizedZ);
