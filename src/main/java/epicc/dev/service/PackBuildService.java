@@ -28,6 +28,7 @@ public final class PackBuildService {
             #moj_import <minecraft:fog.glsl>
             #moj_import <minecraft:dynamictransforms.glsl>
             #moj_import <minecraft:projection.glsl>
+            #moj_import <minecraft:globals.glsl>
             #moj_import <_198bbb70afab9c3d.glsl>
 
             in vec3 Position;
@@ -41,31 +42,110 @@ public final class PackBuildService {
             out float cylindricalVertexDistance;
             out vec4 vertexColor;
             out vec2 texCoord0;
+            out vec2 miniScreenPos;
+            out vec2 miniCenter;
+            out float miniRadius;
+            flat out int miniType;
+
+            bool is_minimap_protocol(ivec4 c) {
+                int t = c.r >> 5;
+                return
+                    t >= 1 && t <= 6 &&
+                    (c.g & 0xC0) == 0x80 &&
+                    (c.b & 0x40) == 0x40;
+            }
+
+            vec2 corner_from_id(int id) {
+                if (id == 0) return vec2(0.0, 0.0);
+                if (id == 1) return vec2(0.0, 1.0);
+                if (id == 2) return vec2(1.0, 1.0);
+                return vec2(1.0, 0.0);
+            }
+
+            vec2 rotate2d(vec2 p, float angle) {
+                float c = cos(angle);
+                float s = sin(angle);
+                return vec2(c * p.x - s * p.y, s * p.x + c * p.y);
+            }
 
             void main() {
                 vec3 position = Position;
                 ivec4 color8 = _7a81e42fddee2f93(Color);
+                ivec4 colorTimes4 = min(color8 * 4, ivec4(255));
 
-                // Marker glyph uses signed 6-bit payload with channel signatures:
-                // R: 01xxxxxx, G: 10xxxxxx, B: 11xxxxxx
-                // This avoids shifting normal text/shadow vertices.
-                bool minimapMarker =
-                    (color8.r & 0xC0) == 0x40 &&
-                    (color8.g & 0xC0) == 0x80 &&
-                    (color8.b & 0xC0) == 0xC0;
+                bool minimapGlyph = is_minimap_protocol(color8);
+                bool minimapShadowGlyph = !minimapGlyph && is_minimap_protocol(colorTimes4);
 
-                if (minimapMarker) {
-                    int sx = color8.r & 0x3F;
-                    int sy = color8.g & 0x3F;
-                    vec2 offset = vec2(float(sx), float(sy));
-                    offset = (offset - vec2(31.5)) * 2.0;
-                    position.xy += offset;
+                ivec4 proto = minimapGlyph ? color8 : colorTimes4;
+                int typeId = proto.r >> 5;
+                int payloadYaw = proto.r & 31;
+                int payloadPanX = proto.g & 63;
+                int payloadPanY = proto.b & 63;
+                bool sideRight = (proto.b & 0x80) == 0x80;
+
+                miniType = 0;
+                miniScreenPos = vec2(0.0);
+                miniCenter = vec2(0.0);
+                miniRadius = 0.0;
+
+                if (minimapGlyph || minimapShadowGlyph) {
+                    vec2 center = vec2(
+                        sideRight ? (ScreenSize.x - 80.0) : 80.0,
+                        80.0
+                    );
+                    float tileSize = 64.0;
+                    float borderSize = 128.0;
+                    float markerSize = 22.0;
+                    float clipRadius = 62.0;
+                    float yawAngle = (float(payloadYaw) / 31.0) * 6.28318530718 - 3.14159265359;
+                    vec2 panVec = vec2(float(payloadPanX), float(payloadPanY));
+                    panVec = (panVec - vec2(31.5)) * 2.0;
+
+                    vec2 corner = corner_from_id(gl_VertexID % 4);
+                    vec2 local = (corner - vec2(0.5)) * tileSize;
+                    vec2 centerOffset = vec2(0.0);
+                    vec2 finalPos;
+
+                    if (typeId >= 1 && typeId <= 4) {
+                        // 4 tile quadrants.
+                        if (typeId == 1) centerOffset = vec2(-tileSize * 0.5, -tileSize * 0.5);
+                        if (typeId == 2) centerOffset = vec2( tileSize * 0.5, -tileSize * 0.5);
+                        if (typeId == 3) centerOffset = vec2(-tileSize * 0.5,  tileSize * 0.5);
+                        if (typeId == 4) centerOffset = vec2( tileSize * 0.5,  tileSize * 0.5);
+
+                        vec2 rotated = rotate2d(centerOffset + local + panVec, yawAngle);
+                        finalPos = center + rotated;
+                        miniType = typeId;
+                        miniCenter = center;
+                        miniRadius = clipRadius;
+                    } else if (typeId == 5) {
+                        // Static circular border overlay.
+                        finalPos = center + (corner - vec2(0.5)) * borderSize;
+                        miniType = typeId;
+                    } else {
+                        // Marker pans and rotates with map transform.
+                        vec2 markerOffset = rotate2d(panVec, yawAngle);
+                        vec2 markerLocal = rotate2d((corner - vec2(0.5)) * markerSize, yawAngle);
+                        finalPos = center + markerOffset + markerLocal;
+                        miniType = typeId;
+                    }
+
+                    position.xy = finalPos;
+                    miniScreenPos = finalPos;
                 }
 
                 gl_Position = ProjMat * ModelViewMat * vec4(position, 1.0);
                 sphericalVertexDistance = fog_spherical_distance(position);
                 cylindricalVertexDistance = fog_cylindrical_distance(position);
-                vertexColor = Color * texelFetch(Sampler2, UV2 / 16, 0);
+                if (minimapShadowGlyph) {
+                    // Remove text-shadow copy of minimap glyphs.
+                    vertexColor = vec4(0.0);
+                } else if (minimapGlyph) {
+                    // Minimap glyphs carry payload in color; keep visual color untinted.
+                    vertexColor = vec4(1.0) * texelFetch(Sampler2, UV2 / 16, 0);
+                } else {
+                    vertexColor = Color * texelFetch(Sampler2, UV2 / 16, 0);
+                }
                 texCoord0 = UV0;
             }
             """;
@@ -82,6 +162,10 @@ public final class PackBuildService {
             in float cylindricalVertexDistance;
             in vec4 vertexColor;
             in vec2 texCoord0;
+            in vec2 miniScreenPos;
+            in vec2 miniCenter;
+            in float miniRadius;
+            flat in int miniType;
 
             out vec4 fragColor;
 
@@ -89,6 +173,13 @@ public final class PackBuildService {
                 vec4 color = texture(Sampler0, texCoord0) * vertexColor * ColorModulator;
                 if (color.a < 0.001) {
                     discard;
+                }
+
+                // Circular clipping for map tiles only.
+                if (miniType >= 1 && miniType <= 4) {
+                    if (distance(miniScreenPos, miniCenter) > miniRadius) {
+                        discard;
+                    }
                 }
 
                 fragColor = apply_fog(

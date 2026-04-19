@@ -5,7 +5,7 @@ pack:
     generatedZipName: "generated.zip"
     exportUncompressed: true
     generateDefaults: true
-    overwriteDefaults: false
+    overwriteDefaults: true
     packFormat: 75
     description: "MiniMap PoC Pack"
 

@@ -101,42 +101,51 @@ public final class HudService {
 
         double normalizedX = clamp((location.getX() - centerX) / radius, -1.0D, 1.0D);
         double normalizedZ = clamp((location.getZ() - centerZ) / radius, -1.0D, 1.0D);
+        int yaw5 = encodeUnsigned5FromYaw(location.getYaw());
+        int markerX6 = encodeUnsigned6FromSigned(normalizedX);
+        int markerY6 = encodeUnsigned6FromSigned(normalizedZ);
+        int sideBit = "right".equalsIgnoreCase(config.getString("hud.map.leftOrRight", "left")) ? 1 : 0;
 
-        int red = encodeMarkerSigned6(normalizedX, 0x40);
-        int green = encodeMarkerSigned6(normalizedZ, 0x80);
-        int blue = encodeMarkerYaw6(location.getYaw());
+        String nwColor = minimapColor(1, yaw5, markerX6, markerY6, sideBit == 1);
+        String neColor = minimapColor(2, yaw5, markerX6, markerY6, sideBit == 1);
+        String swColor = minimapColor(3, yaw5, markerX6, markerY6, sideBit == 1);
+        String seColor = minimapColor(4, yaw5, markerX6, markerY6, sideBit == 1);
+        String borderColor = minimapColor(5, yaw5, 0, 0, sideBit == 1);
+        String markerColor = minimapColor(6, yaw5, markerX6, markerY6, sideBit == 1);
 
-        String white = hexColor(255, 255, 255);
-        String markerColor = hexColor(red, green, blue);
-
-        String leftOrRight = config.getString("hud.map.leftOrRight", "left");
+        String leftOrRight = sideBit == 1 ? "right" : "left";
 
         return layout
-                .replace("{nw}", white + nw)
-                .replace("{ne}", white + ne)
-                .replace("{sw}", white + sw)
-                .replace("{se}", white + se)
-                .replace("{border}", white + border)
+                .replace("{nw}", nwColor + nw)
+                .replace("{ne}", neColor + ne)
+                .replace("{sw}", swColor + sw)
+                .replace("{se}", seColor + se)
+                .replace("{border}", borderColor + border)
                 .replace("{marker}", markerColor + marker)
                 .replace("{side}", leftOrRight)
                 + LEGACY_PREFIX + "r";
     }
 
-    private static int encodeMarkerSigned6(double value, int signature) {
+    private static int encodeUnsigned6FromSigned(double value) {
         int payload = (int) Math.round((value + 1.0D) * 31.5D);
-        payload = (int) clamp(payload, 0, 63);
-        return signature | payload;
+        return (int) clamp(payload, 0, 63);
     }
 
-    private static int encodeMarkerYaw6(float yawDegrees) {
+    private static int encodeUnsigned5FromYaw(float yawDegrees) {
         double wrappedYaw = yawDegrees % 360.0D;
         if (wrappedYaw < 0.0D) {
             wrappedYaw += 360.0D;
         }
 
-        int payload = (int) Math.round((wrappedYaw / 360.0D) * 63.0D);
-        payload = (int) clamp(payload, 0, 63);
-        return 0xC0 | payload;
+        int payload = (int) Math.round((wrappedYaw / 360.0D) * 31.0D);
+        return (int) clamp(payload, 0, 31);
+    }
+
+    private static String minimapColor(int type, int yaw5, int panX6, int panY6, boolean sideRight) {
+        int red = ((type & 0x07) << 5) | (yaw5 & 0x1F);
+        int green = 0x80 | (panX6 & 0x3F);
+        int blue = (sideRight ? 0xC0 : 0x40) | (panY6 & 0x3F);
+        return hexColor(red, green, blue);
     }
 
     private static String hexColor(int red, int green, int blue) {
