@@ -1,7 +1,6 @@
 package epicc.dev.service;
 
 import epicc.dev.MiniMap;
-import java.awt.BasicStroke;
 import java.awt.Color;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
@@ -12,6 +11,7 @@ import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Comparator;
@@ -23,6 +23,8 @@ import javax.imageio.ImageIO;
 import org.bukkit.configuration.file.FileConfiguration;
 
 public final class PackBuildService {
+    private static final String BORDER_RESOURCE_NAME = "border.png";
+
     private static final String TEXT_SHADER_VERTEX = """
             #version 330
             #moj_import <minecraft:fog.glsl>
@@ -65,7 +67,7 @@ public final class PackBuildService {
             vec2 rotate2d(vec2 p, float angle) {
                 float c = cos(angle);
                 float s = sin(angle);
-                return vec2(c * p.x - s * p.y, s * p.x + c * p.y);
+                return vec2(c * p.x + s * p.y, -s * p.x + c * p.y);
             }
 
             void main() {
@@ -97,7 +99,7 @@ public final class PackBuildService {
                     float borderSize = 128.0;
                     float markerSize = 22.0;
                     float clipRadius = 62.0;
-                    float yawAngle = (float(payloadYaw) / 31.0) * 6.28318530718 - 3.14159265359;
+                    float yawAngle = (float(payloadYaw) / 31.0) * 6.28318530718;
                     vec2 panVec = vec2(float(payloadPanX), float(payloadPanY));
                     panVec = (panVec - vec2(31.5)) * 2.0;
 
@@ -435,8 +437,25 @@ public final class PackBuildService {
         writeTextureIfNeeded(contentsPath.resolve("minecraft/textures/font/minimap/ne.png"), 128, new Color(71, 128, 181, 255), PlaceholderMode.FILL, overwrite);
         writeTextureIfNeeded(contentsPath.resolve("minecraft/textures/font/minimap/sw.png"), 128, new Color(63, 116, 170, 255), PlaceholderMode.FILL, overwrite);
         writeTextureIfNeeded(contentsPath.resolve("minecraft/textures/font/minimap/se.png"), 128, new Color(88, 141, 196, 255), PlaceholderMode.FILL, overwrite);
-        writeTextureIfNeeded(contentsPath.resolve("minecraft/textures/font/minimap/border.png"), 128, new Color(235, 235, 235, 255), PlaceholderMode.BORDER, overwrite);
+        writeBorderTexture(contentsPath.resolve("minecraft/textures/font/minimap/border.png"), overwrite);
         writeTextureIfNeeded(contentsPath.resolve("minecraft/textures/font/minimap/marker.png"), 32, new Color(255, 44, 44, 255), PlaceholderMode.MARKER, overwrite);
+    }
+
+    private void writeBorderTexture(Path targetPath, boolean overwrite) throws IOException {
+        if (Files.exists(targetPath) && !overwrite) {
+            return;
+        }
+
+        InputStream sourceStream = this.plugin.getResource(BORDER_RESOURCE_NAME);
+        if (sourceStream == null) {
+            throw new IllegalStateException(
+                    "Missing plugin resource: " + BORDER_RESOURCE_NAME + " (expected at src/main/resources/" + BORDER_RESOURCE_NAME + ")");
+        }
+
+        Files.createDirectories(targetPath.getParent());
+        try (InputStream inputStream = sourceStream) {
+            Files.copy(inputStream, targetPath, StandardCopyOption.REPLACE_EXISTING);
+        }
     }
 
     private void compileContentsToStage(Path contentsPath, Path stagePath) throws IOException {
@@ -527,12 +546,6 @@ public final class PackBuildService {
             for (int y = 0; y < size; y += 16) {
                 graphics.drawLine(0, y, size, y);
             }
-        } else if (mode == PlaceholderMode.BORDER) {
-            graphics.setColor(new Color(0, 0, 0, 0));
-            graphics.fillRect(0, 0, size, size);
-            graphics.setColor(color);
-            graphics.setStroke(new BasicStroke(Math.max(4, size / 16f)));
-            graphics.drawOval(4, 4, size - 8, size - 8);
         } else {
             graphics.setColor(new Color(0, 0, 0, 0));
             graphics.fillRect(0, 0, size, size);
@@ -681,7 +694,6 @@ public final class PackBuildService {
 
     private enum PlaceholderMode {
         FILL,
-        BORDER,
         MARKER
     }
 

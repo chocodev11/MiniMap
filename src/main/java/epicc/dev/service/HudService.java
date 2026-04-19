@@ -103,7 +103,13 @@ public final class HudService {
 
         double normalizedX = clamp((centerX - location.getX()) / radius, -1.0D, 1.0D);
         double normalizedZ = clamp((centerZ - location.getZ()) / radius, -1.0D, 1.0D);
-        int yaw5 = encodeUnsigned5FromYaw(location.getYaw());
+
+        boolean invertYaw = config.getBoolean("hud.map.rotation.invertYaw", true);
+        double yawOffsetDegrees = config.getDouble("hud.map.rotation.offsetDegrees", 180.0D);
+        double playerYawDegrees = normalizeUnsignedDegrees(location.getYaw());
+        double mapRotationDegrees = normalizeUnsignedDegrees((invertYaw ? -playerYawDegrees : playerYawDegrees) + yawOffsetDegrees);
+
+        int yaw5 = encodeUnsigned5FromDegrees(mapRotationDegrees);
         int markerX6 = encodeUnsigned6FromSigned(normalizedX);
         int markerY6 = encodeUnsigned6FromSigned(normalizedZ);
         int sideBit = "right".equalsIgnoreCase(config.getString("hud.map.leftOrRight", "left")) ? 1 : 0;
@@ -133,14 +139,17 @@ public final class HudService {
         return (int) clamp(payload, 0, 63);
     }
 
-    private static int encodeUnsigned5FromYaw(float yawDegrees) {
-        double wrappedYaw = yawDegrees % 360.0D;
-        if (wrappedYaw < 0.0D) {
-            wrappedYaw += 360.0D;
-        }
-
-        int payload = (int) Math.round((wrappedYaw / 360.0D) * 31.0D);
+    private static int encodeUnsigned5FromDegrees(double degrees) {
+        int payload = (int) Math.round((normalizeUnsignedDegrees(degrees) / 360.0D) * 31.0D);
         return (int) clamp(payload, 0, 31);
+    }
+
+    private static double normalizeUnsignedDegrees(double degrees) {
+        double normalized = degrees % 360.0D;
+        if (normalized < 0.0D) {
+            normalized += 360.0D;
+        }
+        return normalized;
     }
 
     private static String minimapColor(int type, int yaw5, int panX6, int panY6, boolean sideRight) {

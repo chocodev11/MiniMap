@@ -26,6 +26,9 @@ hud:
     centerZ: 0.0
     radiusBlocks: 256.0
     leftOrRight: "left"
+    rotation:
+      invertYaw: true
+      offsetDegrees: 180.0
 
   glyphs:
     nw: "\\uE101"
