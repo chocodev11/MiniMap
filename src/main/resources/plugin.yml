@@ -3,6 +3,8 @@ version: 0.0.1
 name: MiniMap
 author: Dumbass
 api-version: '1.21'
+load: STARTUP
+softdepend: [PacketEvents]
 
 commands:
   minimap:

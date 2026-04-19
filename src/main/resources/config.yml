@@ -18,6 +18,9 @@ pack:
     prompt: "MiniMap PoC resource pack"
 
 hud:
+  pipeline:
+    mode: "modern"
+
   updateIntervalTicks: 2
   layout: "{nw}{ne}{sw}{se}{border}{marker}"
 

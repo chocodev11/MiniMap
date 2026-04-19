@@ -1,5 +1,6 @@
 package epicc.dev;
 
+import com.github.retrooper.packetevents.PacketEvents;
 import epicc.dev.commands.MinimapCommand;
 import epicc.dev.listeners.PlayerListener;
 import epicc.dev.service.HudService;
@@ -8,6 +9,7 @@ import epicc.dev.service.PackDeliveryService;
 import epicc.dev.service.PackHttpService;
 import epicc.dev.service.SessionService;
 import epicc.dev.task.TickUpdateTask;
+import io.github.retrooper.packetevents.factory.spigot.SpigotPacketEventsBuilder;
 import org.bukkit.command.PluginCommand;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -19,10 +21,49 @@ public final class MiniMap extends JavaPlugin {
     private PackDeliveryService packDeliveryService;
     private HudService hudService;
     private TickUpdateTask tickUpdateTask;
+    private boolean packetEventsLoaded;
+    private boolean packetEventsInitialized;
+    private Throwable packetEventsFailure;
+
+    @Override
+    public void onLoad() {
+        try {
+            PacketEvents.setAPI(SpigotPacketEventsBuilder.build(this));
+            PacketEvents.getAPI().getSettings()
+                    .reEncodeByDefault(false)
+                    .checkForUpdates(false)
+                    .debug(false);
+            PacketEvents.getAPI().load();
+            this.packetEventsLoaded = true;
+            getLogger().info("PacketEvents loaded.");
+        } catch (Throwable throwable) {
+            this.packetEventsLoaded = false;
+            this.packetEventsFailure = throwable;
+            getLogger().warning("PacketEvents failed to load during onLoad: " + throwable.getMessage());
+        }
+    }
 
     @Override
     public void onEnable() {
         saveDefaultConfig();
+
+        boolean modernMode = "modern".equalsIgnoreCase(getConfig().getString("hud.pipeline.mode", "legacy"));
+        if (this.packetEventsLoaded) {
+            try {
+                PacketEvents.getAPI().init();
+                this.packetEventsInitialized = true;
+                getLogger().info("PacketEvents initialized.");
+            } catch (Throwable throwable) {
+                this.packetEventsInitialized = false;
+                this.packetEventsFailure = throwable;
+                if (modernMode) {
+                    throw new IllegalStateException("Failed to initialize PacketEvents in modern mode", throwable);
+                }
+                getLogger().warning("PacketEvents init failed. Legacy mode can continue: " + throwable.getMessage());
+            }
+        } else if (modernMode) {
+            throw new IllegalStateException("Modern mode requires PacketEvents, but packet layer failed to load.", this.packetEventsFailure);
+        }
 
         this.sessionService = new SessionService();
         this.packBuildService = new PackBuildService(this);
@@ -54,7 +95,7 @@ public final class MiniMap extends JavaPlugin {
             }
         }, 40L);
 
-        getLogger().info("MiniMap has been enabled!");
+        getLogger().info("MiniMap has been enabled! (pipeline=" + this.hudService.currentMode() + ")");
     }
 
     @Override
@@ -75,11 +116,22 @@ public final class MiniMap extends JavaPlugin {
             this.sessionService.clear();
         }
 
+        if (this.packetEventsInitialized) {
+            try {
+                PacketEvents.getAPI().terminate();
+            } catch (Throwable throwable) {
+                getLogger().warning("PacketEvents terminate failed: " + throwable.getMessage());
+            } finally {
+                this.packetEventsInitialized = false;
+            }
+        }
+
         getLogger().info("MiniMap has been disabled!");
     }
 
     public void reloadRuntime() {
         reloadConfig();
+        this.hudService.reloadPipeline();
 
         this.packBuildService.rebuildPack();
         this.packHttpService.restart();
@@ -88,5 +140,9 @@ public final class MiniMap extends JavaPlugin {
         for (Player player : getServer().getOnlinePlayers()) {
             this.packDeliveryService.sendPack(player);
         }
+    }
+
+    public boolean isPacketEventsReady() {
+        return this.packetEventsLoaded && this.packetEventsInitialized;
     }
 }

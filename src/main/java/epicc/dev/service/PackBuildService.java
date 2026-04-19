@@ -15,6 +15,7 @@ import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Comparator;
+import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
 import java.util.zip.ZipEntry;
@@ -24,330 +25,15 @@ import org.bukkit.configuration.file.FileConfiguration;
 
 public final class PackBuildService {
     private static final String BORDER_RESOURCE_NAME = "border.png";
-
-    private static final String TEXT_SHADER_VERTEX = """
-            #version 330
-            #moj_import <minecraft:fog.glsl>
-            #moj_import <minecraft:dynamictransforms.glsl>
-            #moj_import <minecraft:projection.glsl>
-            #moj_import <minecraft:globals.glsl>
-            #moj_import <_198bbb70afab9c3d.glsl>
-
-            in vec3 Position;
-            in vec4 Color;
-            in vec2 UV0;
-            in ivec2 UV2;
-
-            uniform sampler2D Sampler2;
-
-            out float sphericalVertexDistance;
-            out float cylindricalVertexDistance;
-            out vec4 vertexColor;
-            out vec2 texCoord0;
-            out vec2 miniScreenPos;
-            out vec2 miniCenter;
-            out float miniRadius;
-            flat out int miniType;
-
-            bool is_minimap_protocol(ivec4 c) {
-                int t = c.r >> 5;
-                return
-                    t >= 1 && t <= 6 &&
-                    (c.g & 0x80) == 0x80 &&
-                    (c.b & 0x40) == 0x40;
-            }
-
-            vec2 corner_from_id(int id) {
-                if (id == 0) return vec2(0.0, 0.0);
-                if (id == 1) return vec2(0.0, 1.0);
-                if (id == 2) return vec2(1.0, 1.0);
-                return vec2(1.0, 0.0);
-            }
-
-            vec2 rotate2d(vec2 p, float angle) {
-                float c = cos(angle);
-                float s = sin(angle);
-                return vec2(c * p.x + s * p.y, -s * p.x + c * p.y);
-            }
-
-            void main() {
-                vec3 position = Position;
-                ivec4 color8 = _7a81e42fddee2f93(Color);
-                ivec4 colorTimes4 = min(color8 * 4, ivec4(255));
-
-                bool minimapGlyph = is_minimap_protocol(color8);
-                bool minimapShadowGlyph = !minimapGlyph && is_minimap_protocol(colorTimes4);
-
-                ivec4 proto = minimapGlyph ? color8 : colorTimes4;
-                int typeId = proto.r >> 5;
-                int payloadYawLow5 = proto.r & 31;
-                int payloadYawHigh = (proto.g >> 6) & 1;
-                int payloadYaw = payloadYawLow5 | (payloadYawHigh << 5);
-                int payloadPanX = proto.g & 63;
-                int payloadPanY = proto.b & 63;
-                bool sideRight = (proto.b & 0x80) == 0x80;
-
-                miniType = 0;
-                miniScreenPos = vec2(0.0);
-                miniCenter = vec2(0.0);
-                miniRadius = 0.0;
-
-                if (minimapGlyph || minimapShadowGlyph) {
-                    vec2 center = vec2(
-                        sideRight ? (ScreenSize.x - 80.0) : 80.0,
-                        80.0
-                    );
-                    float tileSize = 64.0;
-                    float borderSize = 128.0;
-                    float markerSize = 22.0;
-                    float clipRadius = 62.0;
-                    float yawAngle = (float(payloadYaw) / 63.0) * 6.28318530718;
-                    vec2 panVec = vec2(
-                        (float(payloadPanX) - 31.5) * 2.0,
-                        (float(payloadPanY) - 31.5) * 2.0
-                    );
-
-                    vec2 corner = corner_from_id(gl_VertexID % 4);
-                    vec2 local = (corner - vec2(0.5)) * tileSize;
-                    vec2 centerOffset = vec2(0.0);
-                    vec2 finalPos;
-
-                    if (typeId >= 1 && typeId <= 4) {
-                        // 4 tile quadrants.
-                        if (typeId == 1) centerOffset = vec2(-tileSize * 0.5, -tileSize * 0.5);
-                        if (typeId == 2) centerOffset = vec2( tileSize * 0.5, -tileSize * 0.5);
-                        if (typeId == 3) centerOffset = vec2(-tileSize * 0.5,  tileSize * 0.5);
-                        if (typeId == 4) centerOffset = vec2( tileSize * 0.5,  tileSize * 0.5);
-
-                        vec2 rotated = rotate2d(centerOffset + local + panVec, yawAngle);
-                        finalPos = center + rotated;
-                        miniType = typeId;
-                        miniCenter = center;
-                        miniRadius = clipRadius;
-                    } else if (typeId == 5) {
-                        // Static circular border overlay.
-                        finalPos = center + (corner - vec2(0.5)) * borderSize;
-                        miniType = typeId;
-                    } else {
-                        // Marker pans and rotates with map transform.
-                        vec2 markerOffset = rotate2d(panVec, yawAngle);
-                        vec2 markerLocal = rotate2d((corner - vec2(0.5)) * markerSize, yawAngle);
-                        finalPos = center + markerOffset + markerLocal;
-                        miniType = typeId;
-                    }
-
-                    position.xy = finalPos;
-                    miniScreenPos = finalPos;
-                }
-
-                gl_Position = ProjMat * ModelViewMat * vec4(position, 1.0);
-                sphericalVertexDistance = fog_spherical_distance(position);
-                cylindricalVertexDistance = fog_cylindrical_distance(position);
-                if (minimapShadowGlyph) {
-                    // Remove text-shadow copy of minimap glyphs.
-                    vertexColor = vec4(0.0);
-                } else if (minimapGlyph) {
-                    // Minimap glyphs carry payload in color; keep visual color untinted.
-                    vertexColor = vec4(1.0) * texelFetch(Sampler2, UV2 / 16, 0);
-                } else {
-                    vertexColor = Color * texelFetch(Sampler2, UV2 / 16, 0);
-                }
-                texCoord0 = UV0;
-            }
-            """;
-
-    private static final String TEXT_SHADER_FRAGMENT = """
-            #version 330
-            #moj_import <minecraft:fog.glsl>
-            #moj_import <minecraft:dynamictransforms.glsl>
-            #moj_import <minecraft:globals.glsl>
-
-            uniform sampler2D Sampler0;
-
-            in float sphericalVertexDistance;
-            in float cylindricalVertexDistance;
-            in vec4 vertexColor;
-            in vec2 texCoord0;
-            in vec2 miniScreenPos;
-            in vec2 miniCenter;
-            in float miniRadius;
-            flat in int miniType;
-
-            out vec4 fragColor;
-
-            void main() {
-                vec4 color = texture(Sampler0, texCoord0) * vertexColor * ColorModulator;
-                if (color.a < 0.001) {
-                    discard;
-                }
-
-                // Circular clipping for map tiles only.
-                if (miniType >= 1 && miniType <= 4) {
-                    if (distance(miniScreenPos, miniCenter) > miniRadius) {
-                        discard;
-                    }
-                }
-
-                fragColor = apply_fog(
-                    color,
-                    sphericalVertexDistance,
-                    cylindricalVertexDistance,
-                    FogEnvironmentalStart,
-                    FogEnvironmentalEnd,
-                    FogRenderDistanceStart,
-                    FogRenderDistanceEnd,
-                    FogColor
-                );
-            }
-            """;
-
-    private static final String INCLUDE_198 = """
-            ivec4 _7a81e42fddee2f93(vec4 _e30c3475a3a85ac1){
-                return ivec4(round(_e30c3475a3a85ac1 * 255));
-            }
-
-            int _27e4a854910d5a3f(vec4 _e30c3475a3a85ac1){
-                ivec4 _8191e12dd310f85c = _7a81e42fddee2f93(_e30c3475a3a85ac1);
-                return _8191e12dd310f85c.r << 16 | _8191e12dd310f85c.g << 8 | _8191e12dd310f85c.b;
-            }
-
-            vec4 _e72020d0026b8201(ivec4 _e30c3475a3a85ac1){
-                return vec4(_e30c3475a3a85ac1) / 255;
-            }
-            """;
-
-    private static final String LINES_VERTEX = """
-            #version 330
-            #moj_import <minecraft:fog.glsl>
-            #moj_import <minecraft:globals.glsl>
-            #moj_import <minecraft:dynamictransforms.glsl>
-            #moj_import <minecraft:projection.glsl>
-
-            in vec3 Position;
-            in vec4 Color;
-            in vec3 Normal;
-            in float LineWidth;
-
-            out float sphericalVertexDistance;
-            out float cylindricalVertexDistance;
-            out vec4 vertexColor;
-
-            const float VIEW_SHRINK = 1.0 - (1.0 / 256.0);
-            const mat4 VIEW_SCALE = mat4(
-                VIEW_SHRINK, 0.0, 0.0, 0.0,
-                0.0, VIEW_SHRINK, 0.0, 0.0,
-                0.0, 0.0, VIEW_SHRINK, 0.0,
-                0.0, 0.0, 0.0, 1.0
-            );
-
-            void main() {
-                vec4 linePosStart = ProjMat * VIEW_SCALE * ModelViewMat * vec4(Position, 1.0);
-                vec4 linePosEnd = ProjMat * VIEW_SCALE * ModelViewMat * vec4(Position + Normal, 1.0);
-
-                vec3 ndc1 = linePosStart.xyz / linePosStart.w;
-                vec3 ndc2 = linePosEnd.xyz / linePosEnd.w;
-
-                vec2 lineScreenDirection = normalize((ndc2.xy - ndc1.xy) * ScreenSize);
-                vec2 lineOffset = vec2(-lineScreenDirection.y, lineScreenDirection.x) * LineWidth / ScreenSize;
-
-                if (lineOffset.x < 0.0) {
-                    lineOffset *= -1.0;
-                }
-
-                if (gl_VertexID % 2 == 0) {
-                    gl_Position = vec4((ndc1 + vec3(lineOffset, 0.0)) * linePosStart.w, linePosStart.w);
-                } else {
-                    gl_Position = vec4((ndc1 - vec3(lineOffset, 0.0)) * linePosStart.w, linePosStart.w);
-                }
-
-                sphericalVertexDistance = fog_spherical_distance(Position);
-                cylindricalVertexDistance = fog_cylindrical_distance(Position);
-                vertexColor = Color;
-
-                if (Color == vec4(0, 0, 0, .4)) {
-                    vertexColor = vec4(0, 0, 0, 0);
-                    gl_Position = vec4(0);
-                }
-            }
-            """;
-
-    private static final String ITEM_ENTITY_VERTEX = """
-            #version 330
-            #moj_import <minecraft:light.glsl>
-            #moj_import <minecraft:fog.glsl>
-            #moj_import <minecraft:dynamictransforms.glsl>
-            #moj_import <minecraft:projection.glsl>
-            #moj_import <minecraft:globals.glsl>
-
-            in vec3 Position;
-            in vec4 Color;
-            in vec2 UV0;
-            in vec2 UV1;
-            in ivec2 UV2;
-            in vec3 Normal;
-
-            uniform sampler2D Sampler2;
-
-            out float sphericalVertexDistance;
-            out float cylindricalVertexDistance;
-            out vec4 vertexColor;
-            out vec2 texCoord0;
-            out vec2 texCoord1;
-
-            void main() {
-                gl_Position = ProjMat * ModelViewMat * vec4(Position, 1.0);
-                sphericalVertexDistance = fog_spherical_distance(Position);
-                cylindricalVertexDistance = fog_cylindrical_distance(Position);
-                vertexColor = minecraft_mix_light(Light0_Direction, Light1_Direction, Normal, Color) * texelFetch(Sampler2, UV2 / 16, 0);
-                texCoord0 = UV0;
-                texCoord1 = UV1;
-
-                ivec4 marker = ivec4(Color * 255);
-                if (marker == ivec4(0, 0, 2, 255)) {
-                    gl_Position.z = 0;
-                    if (ModelViewMat[3][2] == -11000.0) {
-                        vertexColor = vec4(0);
-                    } else {
-                        vertexColor = vec4(0.0, 0.0, 0.0, 1.0);
-                    }
-                }
-            }
-            """;
-
-    private static final String ITEM_ENTITY_FRAGMENT = """
-            #version 330
-            #moj_import <minecraft:fog.glsl>
-            #moj_import <minecraft:dynamictransforms.glsl>
-            #moj_import <minecraft:globals.glsl>
-
-            uniform sampler2D Sampler0;
-
-            in float sphericalVertexDistance;
-            in float cylindricalVertexDistance;
-            in vec4 vertexColor;
-            in vec2 texCoord0;
-            in vec2 texCoord1;
-
-            out vec4 fragColor;
-
-            void main() {
-                vec4 color = texture(Sampler0, texCoord0) * vertexColor * ColorModulator;
-                if (color.a < 0.1) {
-                    discard;
-                }
-
-                fragColor = apply_fog(
-                    color,
-                    sphericalVertexDistance,
-                    cylindricalVertexDistance,
-                    FogEnvironmentalStart,
-                    FogEnvironmentalEnd,
-                    FogRenderDistanceStart,
-                    FogRenderDistanceEnd,
-                    FogColor
-                );
-            }
-            """;
+    private static final String DEFAULT_SHADER_ROOT = "pack-defaults";
+    private static final List<String> DEFAULT_SHADER_FILES = List.of(
+            "core/rendertype_text.vsh",
+            "core/rendertype_text.fsh",
+            "core/rendertype_lines.vsh",
+            "core/rendertype_item_entity_translucent_cull.vsh",
+            "core/rendertype_item_entity_translucent_cull.fsh",
+            "include/color_utils.glsl"
+    );
 
     private final MiniMap plugin;
     private BuildArtifact currentArtifact;
@@ -411,6 +97,19 @@ public final class PackBuildService {
     }
 
     private void ensureDefaultContents(FileConfiguration config, Path contentsPath, boolean overwrite) throws IOException {
+        String mode = resolvePipelineMode(config);
+        boolean sideRight = "right".equalsIgnoreCase(config.getString("hud.map.leftOrRight", "left"));
+
+        for (String relativeShaderPath : DEFAULT_SHADER_FILES) {
+            String resourcePath = DEFAULT_SHADER_ROOT + "/" + mode + "/shaders/" + relativeShaderPath;
+            Path outputPath = contentsPath.resolve("minecraft/shaders").resolve(relativeShaderPath);
+            String text = readBundledText(resourcePath);
+            if ("modern".equals(mode) && relativeShaderPath.endsWith("rendertype_text.vsh")) {
+                text = text.replace("__SIDE_RIGHT__", sideRight ? "true" : "false");
+            }
+            writeTextFileIfNeeded(outputPath, text, overwrite);
+        }
+
         String nwGlyph = decodeUnicodeEscapes(config.getString("hud.glyphs.nw", "\\uE101"));
         String neGlyph = decodeUnicodeEscapes(config.getString("hud.glyphs.ne", "\\uE102"));
         String swGlyph = decodeUnicodeEscapes(config.getString("hud.glyphs.sw", "\\uE103"));
@@ -418,21 +117,21 @@ public final class PackBuildService {
         String borderGlyph = decodeUnicodeEscapes(config.getString("hud.glyphs.border", "\\uE105"));
         String markerGlyph = decodeUnicodeEscapes(config.getString("hud.glyphs.marker", "\\uE106"));
 
-        writeTextFileIfNeeded(contentsPath.resolve("minecraft/shaders/core/rendertype_text.vsh"), TEXT_SHADER_VERTEX, overwrite);
-        writeTextFileIfNeeded(contentsPath.resolve("minecraft/shaders/core/rendertype_text.fsh"), TEXT_SHADER_FRAGMENT, overwrite);
-        writeTextFileIfNeeded(contentsPath.resolve("minecraft/shaders/core/rendertype_lines.vsh"), LINES_VERTEX, overwrite);
-        writeTextFileIfNeeded(contentsPath.resolve("minecraft/shaders/core/rendertype_item_entity_translucent_cull.vsh"), ITEM_ENTITY_VERTEX, overwrite);
-        writeTextFileIfNeeded(contentsPath.resolve("minecraft/shaders/core/rendertype_item_entity_translucent_cull.fsh"), ITEM_ENTITY_FRAGMENT, overwrite);
-        writeTextFileIfNeeded(contentsPath.resolve("minecraft/shaders/include/_198bbb70afab9c3d.glsl"), INCLUDE_198, overwrite);
+        int nwAscent = "modern".equals(mode) ? 120000 : 128;
+        int neAscent = "modern".equals(mode) ? 130000 : 128;
+        int swAscent = "modern".equals(mode) ? 140000 : 128;
+        int seAscent = "modern".equals(mode) ? 150000 : 128;
+        int borderAscent = "modern".equals(mode) ? 160000 : 128;
+        int markerAscent = "modern".equals(mode) ? 170000 : 24;
 
         String providers = "{\n"
                 + "  \"providers\": [\n"
-                + "    " + bitmapProvider("minecraft:font/minimap/nw.png", 128, 128, nwGlyph) + ",\n"
-                + "    " + bitmapProvider("minecraft:font/minimap/ne.png", 128, 128, neGlyph) + ",\n"
-                + "    " + bitmapProvider("minecraft:font/minimap/sw.png", 128, 128, swGlyph) + ",\n"
-                + "    " + bitmapProvider("minecraft:font/minimap/se.png", 128, 128, seGlyph) + ",\n"
-                + "    " + bitmapProvider("minecraft:font/minimap/border.png", 128, 128, borderGlyph) + ",\n"
-                + "    " + bitmapProvider("minecraft:font/minimap/marker.png", 32, 24, markerGlyph) + "\n"
+                + "    " + bitmapProvider("minecraft:font/minimap/nw.png", 128, nwAscent, nwGlyph) + ",\n"
+                + "    " + bitmapProvider("minecraft:font/minimap/ne.png", 128, neAscent, neGlyph) + ",\n"
+                + "    " + bitmapProvider("minecraft:font/minimap/sw.png", 128, swAscent, swGlyph) + ",\n"
+                + "    " + bitmapProvider("minecraft:font/minimap/se.png", 128, seAscent, seGlyph) + ",\n"
+                + "    " + bitmapProvider("minecraft:font/minimap/border.png", 128, borderAscent, borderGlyph) + ",\n"
+                + "    " + bitmapProvider("minecraft:font/minimap/marker.png", 32, markerAscent, markerGlyph) + "\n"
                 + "  ]\n"
                 + "}\n";
         writeTextFileIfNeeded(contentsPath.resolve("minecraft/font/default.json"), providers, overwrite);
@@ -443,6 +142,25 @@ public final class PackBuildService {
         writeTextureIfNeeded(contentsPath.resolve("minecraft/textures/font/minimap/se.png"), 128, new Color(88, 141, 196, 255), PlaceholderMode.FILL, overwrite);
         writeBorderTexture(contentsPath.resolve("minecraft/textures/font/minimap/border.png"), overwrite);
         writeTextureIfNeeded(contentsPath.resolve("minecraft/textures/font/minimap/marker.png"), 32, new Color(255, 44, 44, 255), PlaceholderMode.MARKER, overwrite);
+    }
+
+    private String resolvePipelineMode(FileConfiguration config) {
+        String mode = config.getString("hud.pipeline.mode", "legacy");
+        if ("modern".equalsIgnoreCase(mode)) {
+            return "modern";
+        }
+        return "legacy";
+    }
+
+    private String readBundledText(String resourcePath) throws IOException {
+        InputStream stream = this.plugin.getResource(resourcePath);
+        if (stream == null) {
+            throw new IllegalStateException("Missing bundled resource: " + resourcePath);
+        }
+
+        try (InputStream inputStream = stream) {
+            return new String(inputStream.readAllBytes(), StandardCharsets.UTF_8);
+        }
     }
 
     private void writeBorderTexture(Path targetPath, boolean overwrite) throws IOException {
