@@ -22,29 +22,34 @@ out float miniRadius;
 flat out int miniType;
 
 bool decode_modern_opcode(float positionY, out int opcode) {
-    float encoded = abs(positionY);
+    if (positionY < 0.0) {
+        opcode = 0;
+        return false;
+    }
 
-    if (abs(encoded - 120.0) <= 2.0) {
+    float encoded = positionY;
+
+    if (encoded >= 11.0 && encoded <= 21.0) {
         opcode = 1;
         return true;
     }
-    if (abs(encoded - 122.0) <= 2.0) {
+    if (encoded >= 31.0 && encoded <= 41.0) {
         opcode = 2;
         return true;
     }
-    if (abs(encoded - 124.0) <= 2.0) {
+    if (encoded >= 51.0 && encoded <= 61.0) {
         opcode = 3;
         return true;
     }
-    if (abs(encoded - 126.0) <= 2.0) {
+    if (encoded >= 71.0 && encoded <= 81.0) {
         opcode = 4;
         return true;
     }
-    if (abs(encoded - 128.0) <= 2.0) {
+    if (encoded >= 91.0 && encoded <= 101.0) {
         opcode = 5;
         return true;
     }
-    if (abs(encoded - 30.0) <= 2.0) {
+    if (encoded >= 111.0 && encoded <= 121.0) {
         opcode = 6;
         return true;
     }

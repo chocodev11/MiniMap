@@ -117,21 +117,24 @@ public final class PackBuildService {
         String borderGlyph = decodeUnicodeEscapes(config.getString("hud.glyphs.border", "\\uE105"));
         String markerGlyph = decodeUnicodeEscapes(config.getString("hud.glyphs.marker", "\\uE106"));
 
-        int nwAscent = "modern".equals(mode) ? 120 : 128;
-        int neAscent = "modern".equals(mode) ? 122 : 128;
-        int swAscent = "modern".equals(mode) ? 124 : 128;
-        int seAscent = "modern".equals(mode) ? 126 : 128;
-        int borderAscent = "modern".equals(mode) ? 128 : 128;
-        int markerAscent = "modern".equals(mode) ? 30 : 24;
+        int tileHeight = "modern".equals(mode) ? 8 : 128;
+        int markerHeight = "modern".equals(mode) ? 8 : 32;
+
+        int nwAscent = "modern".equals(mode) ? 20 : 128;
+        int neAscent = "modern".equals(mode) ? 40 : 128;
+        int swAscent = "modern".equals(mode) ? 60 : 128;
+        int seAscent = "modern".equals(mode) ? 80 : 128;
+        int borderAscent = "modern".equals(mode) ? 100 : 128;
+        int markerAscent = "modern".equals(mode) ? 120 : 24;
 
         String providers = "{\n"
                 + "  \"providers\": [\n"
-                + "    " + bitmapProvider("minecraft:font/minimap/nw.png", 128, nwAscent, nwGlyph) + ",\n"
-                + "    " + bitmapProvider("minecraft:font/minimap/ne.png", 128, neAscent, neGlyph) + ",\n"
-                + "    " + bitmapProvider("minecraft:font/minimap/sw.png", 128, swAscent, swGlyph) + ",\n"
-                + "    " + bitmapProvider("minecraft:font/minimap/se.png", 128, seAscent, seGlyph) + ",\n"
-                + "    " + bitmapProvider("minecraft:font/minimap/border.png", 128, borderAscent, borderGlyph) + ",\n"
-                + "    " + bitmapProvider("minecraft:font/minimap/marker.png", 32, markerAscent, markerGlyph) + "\n"
+                + "    " + bitmapProvider("minecraft:font/minimap/nw.png", tileHeight, nwAscent, nwGlyph) + ",\n"
+                + "    " + bitmapProvider("minecraft:font/minimap/ne.png", tileHeight, neAscent, neGlyph) + ",\n"
+                + "    " + bitmapProvider("minecraft:font/minimap/sw.png", tileHeight, swAscent, swGlyph) + ",\n"
+                + "    " + bitmapProvider("minecraft:font/minimap/se.png", tileHeight, seAscent, seGlyph) + ",\n"
+                + "    " + bitmapProvider("minecraft:font/minimap/border.png", tileHeight, borderAscent, borderGlyph) + ",\n"
+                + "    " + bitmapProvider("minecraft:font/minimap/marker.png", markerHeight, markerAscent, markerGlyph) + "\n"
                 + "  ]\n"
                 + "}\n";
         writeTextFileIfNeeded(contentsPath.resolve("minecraft/font/default.json"), providers, overwrite);
