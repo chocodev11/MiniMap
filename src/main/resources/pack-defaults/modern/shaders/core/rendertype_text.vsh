@@ -21,41 +21,56 @@ out vec2 miniCenter;
 out float miniRadius;
 flat out int miniType;
 
-bool decode_modern_opcode(float positionY, out int opcode) {
-    if (positionY < 0.0) {
-        opcode = 0;
-        return false;
-    }
+const float MODERN_GLYPH_HEIGHT = 8.0;
 
-    float encoded = positionY;
-
-    if (encoded >= 11.0 && encoded <= 21.0) {
+bool decode_modern_opcode_from_anchor(float anchorY, out int opcode) {
+    if (anchorY >= 18.0 && anchorY <= 22.0) {
         opcode = 1;
         return true;
     }
-    if (encoded >= 31.0 && encoded <= 41.0) {
+    if (anchorY >= 38.0 && anchorY <= 42.0) {
         opcode = 2;
         return true;
     }
-    if (encoded >= 51.0 && encoded <= 61.0) {
+    if (anchorY >= 58.0 && anchorY <= 62.0) {
         opcode = 3;
         return true;
     }
-    if (encoded >= 71.0 && encoded <= 81.0) {
+    if (anchorY >= 78.0 && anchorY <= 82.0) {
         opcode = 4;
         return true;
     }
-    if (encoded >= 91.0 && encoded <= 101.0) {
+    if (anchorY >= 98.0 && anchorY <= 102.0) {
         opcode = 5;
         return true;
     }
-    if (encoded >= 111.0 && encoded <= 121.0) {
+    if (anchorY >= 118.0 && anchorY <= 122.0) {
         opcode = 6;
         return true;
     }
 
     opcode = 0;
     return false;
+}
+
+bool decode_modern_opcode(float positionY, int vertexId, out int opcode) {
+    if (positionY < 0.0) {
+        opcode = 0;
+        return false;
+    }
+
+    int quadVertex = vertexId % 4;
+
+    // Text quads carry different Y per corner. Normalize back to a common
+    // per-glyph anchor before bucketing, otherwise one glyph can split across
+    // multiple opcodes and stretch into lines/triangles.
+    float anchorTop03 = positionY + ((quadVertex == 0 || quadVertex == 3) ? MODERN_GLYPH_HEIGHT : 0.0);
+    if (decode_modern_opcode_from_anchor(anchorTop03, opcode)) {
+        return true;
+    }
+
+    float anchorTop12 = positionY + ((quadVertex == 1 || quadVertex == 2) ? MODERN_GLYPH_HEIGHT : 0.0);
+    return decode_modern_opcode_from_anchor(anchorTop12, opcode);
 }
 
 bool is_modern_signature(ivec4 c) {
@@ -81,7 +96,7 @@ void main() {
     ivec4 colorTimes4 = min(color8 * 4, ivec4(255));
 
     int decodedOpcode = 0;
-    bool opcodeMatch = decode_modern_opcode(Position.y, decodedOpcode);
+    bool opcodeMatch = decode_modern_opcode(Position.y, gl_VertexID, decodedOpcode);
 
     bool modernGlyph = opcodeMatch && is_modern_signature(color8);
     bool modernShadowGlyph = !modernGlyph && opcodeMatch && is_modern_signature(colorTimes4);
