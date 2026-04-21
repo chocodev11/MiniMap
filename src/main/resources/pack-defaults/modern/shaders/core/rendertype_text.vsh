@@ -23,9 +23,34 @@ flat out int miniType;
 
 bool decode_modern_opcode(float positionY, out int opcode) {
     float encoded = abs(positionY);
-    int bucket = int(round(encoded / 10000.0));
-    opcode = bucket - 11;
-    return opcode >= 1 && opcode <= 6;
+
+    if (abs(encoded - 120.0) <= 2.0) {
+        opcode = 1;
+        return true;
+    }
+    if (abs(encoded - 122.0) <= 2.0) {
+        opcode = 2;
+        return true;
+    }
+    if (abs(encoded - 124.0) <= 2.0) {
+        opcode = 3;
+        return true;
+    }
+    if (abs(encoded - 126.0) <= 2.0) {
+        opcode = 4;
+        return true;
+    }
+    if (abs(encoded - 128.0) <= 2.0) {
+        opcode = 5;
+        return true;
+    }
+    if (abs(encoded - 30.0) <= 2.0) {
+        opcode = 6;
+        return true;
+    }
+
+    opcode = 0;
+    return false;
 }
 
 bool is_modern_signature(ivec4 c) {

@@ -117,12 +117,12 @@ public final class PackBuildService {
         String borderGlyph = decodeUnicodeEscapes(config.getString("hud.glyphs.border", "\\uE105"));
         String markerGlyph = decodeUnicodeEscapes(config.getString("hud.glyphs.marker", "\\uE106"));
 
-        int nwAscent = "modern".equals(mode) ? 120000 : 128;
-        int neAscent = "modern".equals(mode) ? 130000 : 128;
-        int swAscent = "modern".equals(mode) ? 140000 : 128;
-        int seAscent = "modern".equals(mode) ? 150000 : 128;
-        int borderAscent = "modern".equals(mode) ? 160000 : 128;
-        int markerAscent = "modern".equals(mode) ? 170000 : 24;
+        int nwAscent = "modern".equals(mode) ? 120 : 128;
+        int neAscent = "modern".equals(mode) ? 122 : 128;
+        int swAscent = "modern".equals(mode) ? 124 : 128;
+        int seAscent = "modern".equals(mode) ? 126 : 128;
+        int borderAscent = "modern".equals(mode) ? 128 : 128;
+        int markerAscent = "modern".equals(mode) ? 30 : 24;
 
         String providers = "{\n"
                 + "  \"providers\": [\n"

@@ -15,6 +15,7 @@ import org.bukkit.entity.Player;
 
 public final class LegacyHudPipeline implements HudPipeline {
     private static final String LEGACY_PREFIX = "\u00A7";
+    private static final double LEGACY_MAX_PAN_PIXELS = 31.5D;
 
     private final MiniMap plugin;
     private final SessionService sessionService;
@@ -135,12 +136,15 @@ public final class LegacyHudPipeline implements HudPipeline {
         double centerZ = config.getDouble("hud.map.centerZ", 0.0D);
         double radius = Math.max(1.0D, config.getDouble("hud.map.radiusBlocks", 256.0D));
 
-        double normalizedX = clamp((centerX - location.getX()) / radius, -1.0D, 1.0D);
-        double normalizedZ = clamp((centerZ - location.getZ()) / radius, -1.0D, 1.0D);
+        double panXBlocks = centerX - location.getX();
+        double panZBlocks = centerZ - location.getZ();
         if (config.getBoolean("hud.map.pan.invert", false)) {
-            normalizedX = -normalizedX;
-            normalizedZ = -normalizedZ;
+            panXBlocks = -panXBlocks;
+            panZBlocks = -panZBlocks;
         }
+        double panClamp = Math.min(radius, LEGACY_MAX_PAN_PIXELS);
+        double panXPixels = clamp(panXBlocks, -panClamp, panClamp);
+        double panZPixels = clamp(panZBlocks, -panClamp, panClamp);
 
         boolean invertYaw = config.getBoolean("hud.map.rotation.invertYaw", false);
         double yawOffsetDegrees = config.getDouble("hud.map.rotation.offsetDegrees", 180.0D);
@@ -148,8 +152,8 @@ public final class LegacyHudPipeline implements HudPipeline {
         double mapRotationDegrees = normalizeUnsignedDegrees((invertYaw ? -playerYawDegrees : playerYawDegrees) + yawOffsetDegrees);
 
         int yaw6 = encodeUnsigned6FromDegrees(mapRotationDegrees);
-        int markerX6 = encodeUnsigned6FromSigned(normalizedX);
-        int markerY6 = encodeUnsigned6FromSigned(normalizedZ);
+        int markerX6 = encodeUnsigned6FromPixels(panXPixels);
+        int markerY6 = encodeUnsigned6FromPixels(panZPixels);
         int sideBit = "right".equalsIgnoreCase(config.getString("hud.map.leftOrRight", "left")) ? 1 : 0;
 
         String nwColor = legacyColor(1, yaw6, markerX6, markerY6, sideBit == 1);
@@ -172,8 +176,8 @@ public final class LegacyHudPipeline implements HudPipeline {
                 + LEGACY_PREFIX + "r";
     }
 
-    private static int encodeUnsigned6FromSigned(double value) {
-        int payload = (int) Math.round((value + 1.0D) * 31.5D);
+    private static int encodeUnsigned6FromPixels(double value) {
+        int payload = (int) Math.round(value + LEGACY_MAX_PAN_PIXELS);
         return (int) clamp(payload, 0, 63);
     }
 

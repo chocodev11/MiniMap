@@ -75,8 +75,8 @@ void main() {
         float clipRadius = 62.0;
         float yawAngle = (float(payloadYaw) / 63.0) * 6.28318530718;
         vec2 panVec = vec2(
-            (float(payloadPanX) - 31.5) * 2.0,
-            (float(payloadPanY) - 31.5) * 2.0
+            (float(payloadPanX) - 31.5),
+            (float(payloadPanY) - 31.5)
         );
 
         vec2 corner = corner_from_id(gl_VertexID % 4);

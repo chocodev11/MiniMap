@@ -18,6 +18,7 @@ import org.bukkit.entity.Player;
 
 public final class ModernHudPipeline implements HudPipeline {
     private static final String LEGACY_PREFIX = "\u00A7";
+    private static final double MODERN_MAX_PAN_PIXELS = 63.5D;
     private static final LegacyComponentSerializer LEGACY_SERIALIZER = LegacyComponentSerializer.legacySection();
 
     private final MiniMap plugin;
@@ -131,12 +132,15 @@ public final class ModernHudPipeline implements HudPipeline {
         double centerZ = config.getDouble("hud.map.centerZ", 0.0D);
         double radius = Math.max(1.0D, config.getDouble("hud.map.radiusBlocks", 256.0D));
 
-        double normalizedX = clamp((centerX - location.getX()) / radius, -1.0D, 1.0D);
-        double normalizedZ = clamp((centerZ - location.getZ()) / radius, -1.0D, 1.0D);
+        double panXBlocks = centerX - location.getX();
+        double panZBlocks = centerZ - location.getZ();
         if (config.getBoolean("hud.map.pan.invert", false)) {
-            normalizedX = -normalizedX;
-            normalizedZ = -normalizedZ;
+            panXBlocks = -panXBlocks;
+            panZBlocks = -panZBlocks;
         }
+        double panClamp = Math.min(radius, MODERN_MAX_PAN_PIXELS);
+        double panXPixels = clamp(panXBlocks, -panClamp, panClamp);
+        double panZPixels = clamp(panZBlocks, -panClamp, panClamp);
 
         boolean invertYaw = config.getBoolean("hud.map.rotation.invertYaw", false);
         double yawOffsetDegrees = config.getDouble("hud.map.rotation.offsetDegrees", 180.0D);
@@ -144,8 +148,8 @@ public final class ModernHudPipeline implements HudPipeline {
         double mapRotationDegrees = normalizeUnsignedDegrees((invertYaw ? -playerYawDegrees : playerYawDegrees) + yawOffsetDegrees);
 
         int yaw8 = encodeUnsigned8FromDegrees(mapRotationDegrees);
-        int panX7 = encodeUnsigned7FromSigned(normalizedX);
-        int panY7 = encodeUnsigned7FromSigned(normalizedZ);
+        int panX7 = encodeUnsigned7FromPixels(panXPixels);
+        int panY7 = encodeUnsigned7FromPixels(panZPixels);
         String payloadColor = modernColor(yaw8, panX7, panY7);
 
         int sideBit = "right".equalsIgnoreCase(config.getString("hud.map.leftOrRight", "left")) ? 1 : 0;
@@ -162,8 +166,8 @@ public final class ModernHudPipeline implements HudPipeline {
                 + LEGACY_PREFIX + "r";
     }
 
-    private static int encodeUnsigned7FromSigned(double value) {
-        int payload = (int) Math.round((value + 1.0D) * 63.5D);
+    private static int encodeUnsigned7FromPixels(double value) {
+        int payload = (int) Math.round(value + MODERN_MAX_PAN_PIXELS);
         return (int) clamp(payload, 0, 127);
     }
 
