@@ -20,6 +20,7 @@ pack:
 hud:
   pipeline:
     mode: "modern"
+    debugShader: false
 
   updateIntervalTicks: 2
   layout: "{nw}{ne}{sw}{se}{border}{marker}"

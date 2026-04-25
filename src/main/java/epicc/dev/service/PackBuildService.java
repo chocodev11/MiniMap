@@ -105,9 +105,12 @@ public final class PackBuildService {
             Path outputPath = contentsPath.resolve("minecraft/shaders").resolve(relativeShaderPath);
             String text = readBundledText(resourcePath);
             if ("modern".equals(mode) && relativeShaderPath.endsWith("rendertype_text.vsh")) {
-                text = text.replace("__SIDE_RIGHT__", sideRight ? "true" : "false");
+                boolean debugShader = config.getBoolean("hud.pipeline.debugShader", false);
+                text = text
+                        .replace("__SIDE_RIGHT__", sideRight ? "true" : "false")
+                        .replace("__DEBUG_SHADER__", debugShader ? "true" : "false");
             }
-            writeTextFileIfNeeded(outputPath, text, overwrite);
+            writeTextFileIfNeeded(outputPath, text, true);
         }
 
         String nwGlyph = decodeUnicodeEscapes(config.getString("hud.glyphs.nw", "\\uE101"));
@@ -117,15 +120,16 @@ public final class PackBuildService {
         String borderGlyph = decodeUnicodeEscapes(config.getString("hud.glyphs.border", "\\uE105"));
         String markerGlyph = decodeUnicodeEscapes(config.getString("hud.glyphs.marker", "\\uE106"));
 
-        int tileHeight = "modern".equals(mode) ? 8 : 128;
-        int markerHeight = "modern".equals(mode) ? 8 : 32;
+        boolean modernMode = "modern".equals(mode);
+        int tileHeight = modernMode ? 8 : 128;
+        int markerHeight = modernMode ? 8 : 32;
 
-        int nwAscent = "modern".equals(mode) ? 20 : 128;
-        int neAscent = "modern".equals(mode) ? 40 : 128;
-        int swAscent = "modern".equals(mode) ? 60 : 128;
-        int seAscent = "modern".equals(mode) ? 80 : 128;
-        int borderAscent = "modern".equals(mode) ? 100 : 128;
-        int markerAscent = "modern".equals(mode) ? 120 : 24;
+        int nwAscent = modernMode ? modernOpcodeAscent(1) : 128;
+        int neAscent = modernMode ? modernOpcodeAscent(2) : 128;
+        int swAscent = modernMode ? modernOpcodeAscent(3) : 128;
+        int seAscent = modernMode ? modernOpcodeAscent(4) : 128;
+        int borderAscent = modernMode ? modernOpcodeAscent(5) : 128;
+        int markerAscent = modernMode ? modernOpcodeAscent(6) : 24;
 
         String providers = "{\n"
                 + "  \"providers\": [\n"
@@ -137,7 +141,7 @@ public final class PackBuildService {
                 + "    " + bitmapProvider("minecraft:font/minimap/marker.png", markerHeight, markerAscent, markerGlyph) + "\n"
                 + "  ]\n"
                 + "}\n";
-        writeTextFileIfNeeded(contentsPath.resolve("minecraft/font/default.json"), providers, overwrite);
+        writeTextFileIfNeeded(contentsPath.resolve("minecraft/font/default.json"), providers, true);
 
         writeTextureIfNeeded(contentsPath.resolve("minecraft/textures/font/minimap/nw.png"), 128, new Color(52, 107, 164, 255), PlaceholderMode.FILL, overwrite);
         writeTextureIfNeeded(contentsPath.resolve("minecraft/textures/font/minimap/ne.png"), 128, new Color(71, 128, 181, 255), PlaceholderMode.FILL, overwrite);
@@ -233,11 +237,17 @@ public final class PackBuildService {
     private void writePackMcmeta(FileConfiguration config, Path stagePath) throws IOException {
         int packFormat = config.getInt("pack.pipeline.packFormat", 75);
         String description = escapeJson(config.getString("pack.pipeline.description", "MiniMap PoC Pack"));
+        String modernFormatFields = packFormat > 64
+                ? ",\n"
+                        + "    \"min_format\": " + packFormat + ",\n"
+                        + "    \"max_format\": " + packFormat
+                : "";
 
         String json = "{\n"
                 + "  \"pack\": {\n"
                 + "    \"pack_format\": " + packFormat + ",\n"
-                + "    \"description\": \"" + description + "\"\n"
+                + "    \"description\": \"" + description + "\""
+                + modernFormatFields + "\n"
                 + "  }\n"
                 + "}\n";
 
@@ -248,6 +258,12 @@ public final class PackBuildService {
     private String bitmapProvider(String filePath, int height, int ascent, String glyph) {
         return "{\"type\":\"bitmap\",\"file\":\"" + filePath + "\",\"height\":" + height + ",\"ascent\":" + ascent
                 + ",\"chars\":[\"" + escapeGlyph(glyph) + "\"]}";
+    }
+
+    private static int modernOpcodeAscent(int opcode) {
+        // Negative ascent pushes glyph vertices into the Position.y opcode buckets
+        // decoded by the modern text shader. BitmapProvider only rejects ascent > height.
+        return -(100000 + opcode * 10000 + 5000);
     }
 
     private void writeTextureIfNeeded(Path targetPath, int size, Color color, PlaceholderMode mode, boolean overwrite) throws IOException {

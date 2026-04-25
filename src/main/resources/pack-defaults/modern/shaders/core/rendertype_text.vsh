@@ -21,60 +21,41 @@ out vec2 miniCenter;
 out float miniRadius;
 flat out int miniType;
 
-const float MODERN_GLYPH_HEIGHT = 8.0;
-
-bool decode_modern_opcode_from_anchor(float anchorY, out int opcode) {
-    if (anchorY >= 18.0 && anchorY <= 22.0) {
-        opcode = 1;
-        return true;
-    }
-    if (anchorY >= 38.0 && anchorY <= 42.0) {
-        opcode = 2;
-        return true;
-    }
-    if (anchorY >= 58.0 && anchorY <= 62.0) {
-        opcode = 3;
-        return true;
-    }
-    if (anchorY >= 78.0 && anchorY <= 82.0) {
-        opcode = 4;
-        return true;
-    }
-    if (anchorY >= 98.0 && anchorY <= 102.0) {
-        opcode = 5;
-        return true;
-    }
-    if (anchorY >= 118.0 && anchorY <= 122.0) {
-        opcode = 6;
-        return true;
-    }
-
-    opcode = 0;
-    return false;
-}
-
-bool decode_modern_opcode(float positionY, int vertexId, out int opcode) {
-    if (positionY < 0.0) {
-        opcode = 0;
-        return false;
-    }
-
-    int quadVertex = vertexId % 4;
-
-    // Text quads carry different Y per corner. Normalize back to a common
-    // per-glyph anchor before bucketing, otherwise one glyph can split across
-    // multiple opcodes and stretch into lines/triangles.
-    float anchorTop03 = positionY + ((quadVertex == 0 || quadVertex == 3) ? MODERN_GLYPH_HEIGHT : 0.0);
-    if (decode_modern_opcode_from_anchor(anchorTop03, opcode)) {
-        return true;
-    }
-
-    float anchorTop12 = positionY + ((quadVertex == 1 || quadVertex == 2) ? MODERN_GLYPH_HEIGHT : 0.0);
-    return decode_modern_opcode_from_anchor(anchorTop12, opcode);
-}
+const bool DEBUG_SHADER = __DEBUG_SHADER__;
 
 bool is_modern_signature(ivec4 c) {
     return (c.r & 0x80) == 0x80 && (c.g & 0x80) == 0x80;
+}
+
+int decode_modern_opcode(float positionY) {
+    float screenScale = 1.0 / (ProjMat[1][1] / 2.0);
+    // Mirrors the research shader: large negative buckets encode glyph opcodes.
+    int raw = int(round(screenScale - positionY));
+    if (raw > -100000) {
+        return 0;
+    }
+
+    int opcode = (raw + 100000) / -10000;
+    if (opcode >= 1 && opcode <= 6) {
+        return opcode;
+    }
+    return 0;
+}
+
+vec4 debug_color(int opcode, int corner) {
+    vec3 base = vec3(1.0, 1.0, 1.0);
+    if (opcode == 1) base = vec3(1.0, 0.0, 0.0);
+    if (opcode == 2) base = vec3(0.0, 1.0, 0.0);
+    if (opcode == 3) base = vec3(0.0, 0.25, 1.0);
+    if (opcode == 4) base = vec3(1.0, 0.5, 0.0);
+    if (opcode == 5) base = vec3(0.0, 1.0, 1.0);
+    if (opcode == 6) base = vec3(1.0, 0.0, 1.0);
+
+    float shade = 1.0;
+    if (corner == 1) shade = 0.75;
+    if (corner == 2) shade = 0.50;
+    if (corner == 3) shade = 0.30;
+    return vec4(base * shade, 1.0);
 }
 
 vec2 corner_from_id(int id) {
@@ -95,9 +76,8 @@ void main() {
     ivec4 color8 = _7a81e42fddee2f93(Color);
     ivec4 colorTimes4 = min(color8 * 4, ivec4(255));
 
-    int decodedOpcode = 0;
-    bool opcodeMatch = decode_modern_opcode(Position.y, gl_VertexID, decodedOpcode);
-
+    int decodedOpcode = decode_modern_opcode(Position.y);
+    bool opcodeMatch = decodedOpcode >= 1 && decodedOpcode <= 6;
     bool modernGlyph = opcodeMatch && is_modern_signature(color8);
     bool modernShadowGlyph = !modernGlyph && opcodeMatch && is_modern_signature(colorTimes4);
 
@@ -122,9 +102,11 @@ void main() {
         float markerSize = 22.0;
         float clipRadius = 62.0;
 
-        float yawAngle = yawNorm * -6.28318530718 + 3.14159265359;
-        vec2 panVec = vec2(float(payloadPanX), float(payloadPanY));
-        panVec = (panVec - vec2(63.5)) * 1.0;
+        float yawAngle = yawNorm * 6.28318530718;
+        vec2 panVec = vec2(
+            float(payloadPanX) - 63.5,
+            float(payloadPanY) - 63.5
+        );
 
         vec2 corner = corner_from_id(gl_VertexID % 4);
         vec2 local = (corner - vec2(0.5)) * tileSize;
@@ -160,7 +142,9 @@ void main() {
     sphericalVertexDistance = fog_spherical_distance(position);
     cylindricalVertexDistance = fog_cylindrical_distance(position);
 
-    if (modernShadowGlyph) {
+    if (DEBUG_SHADER && (modernGlyph || modernShadowGlyph)) {
+        vertexColor = debug_color(typeId, gl_VertexID % 4);
+    } else if (modernShadowGlyph) {
         vertexColor = vec4(0.0);
     } else if (modernGlyph) {
         vertexColor = vec4(1.0) * texelFetch(Sampler2, UV2 / 16, 0);
