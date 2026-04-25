@@ -22,7 +22,7 @@ hud:
     mode: "modern"
     debugShader: false
 
-  updateIntervalTicks: 2
+  updateIntervalTicks: 1
   layout: "{nw}{ne}{sw}{se}{border}{marker}"
 
   map:
