@@ -18,7 +18,7 @@ import org.bukkit.entity.Player;
 
 public final class ModernHudPipeline implements HudPipeline {
     private static final String LEGACY_PREFIX = "\u00A7";
-    private static final double MODERN_MAX_PAN_PIXELS = 63.5D;
+    private static final double MODERN_MAX_PAN_TEXELS = 63.5D;
     private static final LegacyComponentSerializer LEGACY_SERIALIZER = LegacyComponentSerializer.legacySection();
 
     private final MiniMap plugin;
@@ -140,9 +140,9 @@ public final class ModernHudPipeline implements HudPipeline {
             panXBlocks = -panXBlocks;
             panZBlocks = -panZBlocks;
         }
-        double panClamp = Math.min(radius, MODERN_MAX_PAN_PIXELS);
-        double panXPixels = clamp(panXBlocks, -panClamp, panClamp);
-        double panZPixels = clamp(panZBlocks, -panClamp, panClamp);
+        double panClamp = Math.min(radius, MODERN_MAX_PAN_TEXELS);
+        double panXTexels = clamp(panXBlocks, -panClamp, panClamp);
+        double panZTexels = clamp(panZBlocks, -panClamp, panClamp);
 
         boolean invertYaw = config.getBoolean("hud.map.rotation.invertYaw", false);
         double yawOffsetDegrees = config.getDouble("hud.map.rotation.offsetDegrees", 180.0D);
@@ -158,8 +158,8 @@ public final class ModernHudPipeline implements HudPipeline {
         }
 
         int yaw8 = encodeUnsigned8FromDegrees(mapRotationDegrees);
-        int panX7 = encodeUnsigned7FromPixels(panXPixels);
-        int panY7 = encodeUnsigned7FromPixels(panZPixels);
+        int panX7 = encodeUnsigned7FromTexels(panXTexels);
+        int panY7 = encodeUnsigned7FromTexels(panZTexels);
         String payloadColor = modernColor(yaw8, panX7, panY7);
 
         int sideBit = "right".equalsIgnoreCase(config.getString("hud.map.leftOrRight", "left")) ? 1 : 0;
@@ -176,8 +176,8 @@ public final class ModernHudPipeline implements HudPipeline {
                 + LEGACY_PREFIX + "r";
     }
 
-    private static int encodeUnsigned7FromPixels(double value) {
-        int payload = (int) Math.round(value + MODERN_MAX_PAN_PIXELS);
+    private static int encodeUnsigned7FromTexels(double value) {
+        int payload = (int) Math.round(value + MODERN_MAX_PAN_TEXELS);
         return (int) clamp(payload, 0, 127);
     }
 

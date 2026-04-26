@@ -18,6 +18,7 @@ out vec4 vertexColor;
 out vec2 texCoord0;
 out vec2 miniScreenPos;
 out vec2 miniCenter;
+out vec2 miniTexelOffset;
 out float miniRadius;
 flat out int miniType;
 
@@ -91,6 +92,7 @@ void main() {
     miniType = 0;
     miniScreenPos = vec2(0.0);
     miniCenter = vec2(0.0);
+    miniTexelOffset = vec2(0.0);
     miniRadius = 0.0;
 
     if (modernGlyph || modernShadowGlyph) {
@@ -119,18 +121,18 @@ void main() {
             if (typeId == 3) centerOffset = vec2(-tileSize * 0.5,  tileSize * 0.5);
             if (typeId == 4) centerOffset = vec2( tileSize * 0.5,  tileSize * 0.5);
 
-            vec2 rotated = rotate2d(centerOffset + local + panVec, yawAngle);
+            vec2 rotated = rotate2d(centerOffset + local, yawAngle);
             finalPos = center + rotated;
             miniType = typeId;
             miniCenter = center;
+            miniTexelOffset = -panVec;
             miniRadius = clipRadius;
         } else if (typeId == 5) {
             finalPos = center + (corner - vec2(0.5)) * borderSize;
             miniType = typeId;
         } else {
-            vec2 markerOffset = rotate2d(panVec, yawAngle);
             vec2 markerLocal = rotate2d((corner - vec2(0.5)) * markerSize, yawAngle);
-            finalPos = center + markerOffset + markerLocal;
+            finalPos = center + markerLocal;
             miniType = typeId;
         }
 
