@@ -55,7 +55,7 @@ See [src/main/resources/config.yml](src/main/resources/config.yml) for the full 
 - `pack.host.*`: Controls the embedded HTTP server and the URL sent to players.
 - `hud.pipeline.mode`: `legacy` or `modern`. `modern` requires PacketEvents to load correctly.
 - `hud.updateIntervalTicks`: HUD refresh interval.
-- `hud.map.*`: Center point, radius, side, pan inversion, and yaw offset.
+- `hud.map.*`: Center point, radius, side, pan inversion, yaw offset, and optional EMA yaw smoothing.
 - `hud.glyphs.*`: Private-use glyphs used by the HUD font providers.
 
 ## Runtime Files

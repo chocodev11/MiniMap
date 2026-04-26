@@ -35,6 +35,9 @@ hud:
     rotation:
       invertYaw: false
       offsetDegrees: 180.0
+      smoothing:
+        enabled: false
+        alpha: 0.3
 
   glyphs:
     nw: "\\uE101"

@@ -48,6 +48,7 @@ public final class ModernHudPipeline implements HudPipeline {
             WrapperPlayServerBossBar removePacket = new WrapperPlayServerBossBar(barId, WrapperPlayServerBossBar.Action.REMOVE);
             PacketEvents.getAPI().getPlayerManager().sendPacket(player, removePacket);
         }
+        this.sessionService.clearSmoothedYaw(playerId);
         this.sessionService.clearLastHudTitle(playerId);
     }
 
@@ -119,6 +120,7 @@ public final class ModernHudPipeline implements HudPipeline {
     private String buildHudTitle(Player player) {
         FileConfiguration config = this.plugin.getConfig();
         String layout = config.getString("hud.layout", "{nw}{ne}{sw}{se}{border}{marker}");
+        UUID playerId = player.getUniqueId();
 
         String nw = decodeUnicodeEscapes(config.getString("hud.glyphs.nw", "\\uE101"));
         String ne = decodeUnicodeEscapes(config.getString("hud.glyphs.ne", "\\uE102"));
@@ -144,8 +146,16 @@ public final class ModernHudPipeline implements HudPipeline {
 
         boolean invertYaw = config.getBoolean("hud.map.rotation.invertYaw", false);
         double yawOffsetDegrees = config.getDouble("hud.map.rotation.offsetDegrees", 180.0D);
+        boolean yawSmoothingEnabled = config.getBoolean("hud.map.rotation.smoothing.enabled", false);
+        double yawSmoothingAlpha = clamp(config.getDouble("hud.map.rotation.smoothing.alpha", 1.0D), 0.0D, 1.0D);
         double playerYawDegrees = normalizeUnsignedDegrees(location.getYaw());
-        double mapRotationDegrees = normalizeUnsignedDegrees((invertYaw ? -playerYawDegrees : playerYawDegrees) + yawOffsetDegrees);
+        double rawMapRotationDegrees = normalizeUnsignedDegrees((invertYaw ? -playerYawDegrees : playerYawDegrees) + yawOffsetDegrees);
+        double mapRotationDegrees = rawMapRotationDegrees;
+        if (yawSmoothingEnabled && yawSmoothingAlpha > 0.0D && yawSmoothingAlpha < 1.0D) {
+            mapRotationDegrees = this.sessionService.smoothYawDegrees(playerId, rawMapRotationDegrees, yawSmoothingAlpha);
+        } else {
+            this.sessionService.clearSmoothedYaw(playerId);
+        }
 
         int yaw8 = encodeUnsigned8FromDegrees(mapRotationDegrees);
         int panX7 = encodeUnsigned7FromPixels(panXPixels);
